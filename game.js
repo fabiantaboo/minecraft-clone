@@ -1013,47 +1013,107 @@ class MinecraftClone {
             height = Math.min(height, this.seaLevel - 2);
         }
         
-        for (let y = 0; y <= Math.max(height, this.seaLevel + 1); y++) {
+        // Generate enhanced terrain with much denser block placement
+        // Start from bedrock level and fill ALL spaces with appropriate blocks
+        const minTerrainHeight = Math.max(height, this.seaLevel - 5); // Ensure solid terrain even in water areas
+        const maxTerrainHeight = Math.max(height + 15, this.seaLevel + 10); // Extended terrain range for density
+        
+        for (let y = 0; y <= maxTerrainHeight; y++) {
             const blockKey = `${worldX}_${y}_${worldZ}`;
             let blockType;
             
-            // Check for caves first (only in solid terrain)
-            if (y <= height && y > 5) {
+            // Bedrock layer at bottom
+            if (y === 0) {
+                blockType = 'bedrock';
+            }
+            // Check for caves first (only in solid terrain areas)
+            else if (y <= height && y > 5 && y <= this.seaLevel + 20) {
                 const caveResult = this.generateAdvancedCaveSystem(worldX, y, worldZ, biome);
                 if (caveResult.isAir) {
-                    // This is a cave - set to air or water if below sea level
+                    // This is a cave - but we'll still add water if below sea level
                     if (y <= this.seaLevel) {
                         blockType = 'water';
                     } else {
-                        // Air cave
-                        chunk.set(blockKey, 'air');
-                        continue; // Skip rest of terrain generation for this block
+                        // Air cave - but we'll limit cave frequency to maintain density
+                        const caveDensityNoise = this.octaveNoise(worldX * 0.05, y * 0.1, worldZ * 0.05, 2, 0.3, 1);
+                        if (caveDensityNoise > 0.3) {
+                            // Reduce cave frequency - fill with appropriate terrain instead
+                            if (y <= height - 8) {
+                                blockType = 'stone';
+                            } else if (y <= height - 3) {
+                                blockType = this.getSoilType(biome, 0.5);
+                            } else {
+                                blockType = 'dirt';
+                            }
+                        } else {
+                            chunk.set(blockKey, 'air');
+                            continue;
+                        }
                     }
                 }
             }
             
-            if (y <= height && !blockType) {
-                if (y === height && !isRiver && !isLake) {
-                    // Surface block based on biome
-                    blockType = this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
-                } else if (y >= height - 3) {
-                    // Subsurface layer
-                    blockType = this.getSoilType(biome, 0.5);
-                } else if (y >= height - 8) {
-                    // Upper rock layer
-                    blockType = this.getRockType(biome, y, height);
-                } else {
-                    // Deep stone with occasional ores
-                    blockType = this.getDeepRockWithOres(worldX, y, worldZ, biome);
+            // Enhanced terrain generation with much denser block placement
+            if (!blockType) {
+                if (y <= height) {
+                    // Original terrain - maintain existing logic but ensure density
+                    if (y === height && !isRiver && !isLake) {
+                        // Surface block based on biome
+                        blockType = this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
+                    } else if (y >= height - 3) {
+                        // Subsurface layer
+                        blockType = this.getSoilType(biome, 0.5);
+                    } else if (y >= height - 8) {
+                        // Upper rock layer
+                        blockType = this.getRockType(biome, y, height);
+                    } else {
+                        // Deep stone with occasional ores
+                        blockType = this.getDeepRockWithOres(worldX, y, worldZ, biome);
+                    }
                 }
-            } else if (y <= this.seaLevel && !blockType) {
-                // Water layer
-                if (biome === 'swamp') {
-                    blockType = 'swamp_water';
-                } else if (biome === 'frozen_ocean' || biome === 'ice_spikes') {
-                    blockType = y === this.seaLevel ? 'ice' : 'water';
-                } else {
-                    blockType = 'water';
+                // ENHANCED: Fill areas above original terrain with additional terrain
+                else if (y <= minTerrainHeight + 8) {
+                    // Create additional terrain layers above original height
+                    const extraTerrainNoise = this.octaveNoise(worldX * 0.08, y * 0.1, worldZ * 0.08, 3, 0.4, 1);
+                    const densityNoise = this.octaveNoise(worldX * 0.15, y * 0.2, worldZ * 0.15, 2, 0.5, 1);
+                    
+                    // Much higher chance of terrain generation for density
+                    if (extraTerrainNoise > -0.3 || densityNoise > 0.1) {
+                        const distanceFromOriginal = y - height;
+                        
+                        if (distanceFromOriginal <= 2) {
+                            // Close to original surface - use dirt/grass
+                            blockType = Math.random() < 0.7 ? 'dirt' : this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
+                        } else if (distanceFromOriginal <= 5) {
+                            // Medium distance - mix of dirt and stone
+                            blockType = Math.random() < 0.6 ? 'dirt' : 'stone';
+                        } else {
+                            // Higher up - mostly stone with some dirt
+                            blockType = Math.random() < 0.4 ? 'dirt' : 'stone';
+                        }
+                    }
+                }
+                // Water areas - ensure they're filled too
+                else if (y <= this.seaLevel && !blockType) {
+                    if (biome === 'swamp') {
+                        blockType = 'swamp_water';
+                    } else if (biome === 'frozen_ocean' || biome === 'ice_spikes') {
+                        blockType = y === this.seaLevel ? 'ice' : 'water';
+                    } else {
+                        blockType = 'water';
+                    }
+                }
+                // CRITICAL: Fill remaining empty spaces with terrain to eliminate gaps
+                else if (y <= this.seaLevel + 5) {
+                    // Fill areas just above sea level with terrain to create solid world
+                    const fillNoise = this.octaveNoise(worldX * 0.1, y * 0.1, worldZ * 0.1, 2, 0.3, 1);
+                    if (fillNoise > -0.2) { // High probability of terrain
+                        if (y <= this.seaLevel + 2) {
+                            blockType = 'dirt';
+                        } else {
+                            blockType = Math.random() < 0.5 ? 'dirt' : this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
+                        }
+                    }
                 }
             }
             
@@ -1062,9 +1122,83 @@ class MinecraftClone {
             }
         }
         
+        // FINAL PASS: Fill any remaining gaps to ensure completely solid terrain
+        this.fillTerrainGaps(chunk, worldX, worldZ, maxTerrainHeight);
+        
         // Add vegetation based on advanced biome system
         if (height > this.seaLevel && !isRiver && !isLake) {
             this.generateVegetationForBiome(chunk, worldX, height, worldZ, biome);
+        }
+    }
+    
+    fillTerrainGaps(chunk, worldX, worldZ, maxHeight) {
+        // ADVANCED GAP FILLING: Ensure absolutely no empty spaces in terrain
+        // This creates a much more solid, Minecraft-like world with dense terrain
+        
+        for (let y = 1; y <= maxHeight; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            const currentBlock = chunk.get(blockKey);
+            
+            // If we find an empty space (no block), fill it intelligently
+            if (!currentBlock) {
+                let fillBlock = 'dirt'; // Default safe fill
+                
+                // Check blocks above and below to determine best fill material
+                const blockBelow = chunk.get(`${worldX}_${y-1}_${worldZ}`);
+                const blockAbove = chunk.get(`${worldX}_${y+1}_${worldZ}`);
+                
+                // Intelligent fill based on surrounding context
+                if (y <= 5) {
+                    // Very deep - use stone
+                    fillBlock = 'stone';
+                } else if (y <= this.seaLevel) {
+                    // Below sea level - check if we should use water or solid terrain
+                    const waterChance = this.octaveNoise(worldX * 0.02, y * 0.1, worldZ * 0.02, 2, 0.3, 1);
+                    if (waterChance > 0.3) {
+                        fillBlock = 'water';
+                    } else {
+                        // Fill with solid terrain for density
+                        fillBlock = y > this.seaLevel - 3 ? 'dirt' : 'stone';
+                    }
+                } else if (y <= this.seaLevel + 3) {
+                    // Just above sea level - mostly dirt/grass for solid terrain
+                    const surfaceNoise = this.octaveNoise(worldX * 0.05, y * 0.1, worldZ * 0.05, 2, 0.4, 1);
+                    if (surfaceNoise > 0.0) {
+                        fillBlock = 'dirt';
+                    } else {
+                        // Small chance of grass on surface
+                        fillBlock = Math.random() < 0.3 ? 'grass' : 'dirt';
+                    }
+                } else {
+                    // Higher up - create scattered terrain for interesting landscape
+                    const heightNoise = this.octaveNoise(worldX * 0.1, y * 0.2, worldZ * 0.1, 2, 0.5, 1);
+                    if (heightNoise > 0.2) {
+                        fillBlock = y > this.seaLevel + 8 ? 'stone' : 'dirt';
+                    } else {
+                        // Leave some spaces as air for natural caves/overhangs
+                        continue; // Skip filling this space
+                    }
+                }
+                
+                // Apply the fill
+                chunk.set(blockKey, fillBlock);
+            }
+        }
+        
+        // SECOND PASS: Ensure surface coherence - no floating dirt/grass
+        for (let y = 2; y <= maxHeight - 1; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            const currentBlock = chunk.get(blockKey);
+            
+            if (currentBlock === 'grass' || currentBlock === 'dirt') {
+                const blockBelow = chunk.get(`${worldX}_${y-1}_${worldZ}`);
+                
+                // Grass/dirt should have solid support below
+                if (!blockBelow || blockBelow === 'air' || blockBelow === 'water') {
+                    // Replace floating blocks with stone for structural integrity
+                    chunk.set(blockKey, 'stone');
+                }
+            }
         }
     }
     
