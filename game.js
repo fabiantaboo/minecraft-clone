@@ -220,7 +220,11 @@ class MinecraftClone {
         console.log(`Final spawn position: ${spawnX + 0.5}, ${spawnY}, ${spawnZ + 0.5}`);
         
         this.lastPlayerChunk = { x: spawnChunkX, z: spawnChunkZ };
+        
+        console.log(`About to render world...`);
         this.renderWorld();
+        console.log(`World rendered. Total blocks in scene: ${this.blockMeshes.size}`);
+        console.log(`Loaded chunks: ${this.loadedChunks.size}`);
     }
     
     initializePerlinNoise() {
@@ -528,19 +532,32 @@ class MinecraftClone {
         const chunkKey = `${chunkX}_${chunkZ}`;
         const chunkBlocks = new Set();
         
-        const chunkData = this.generateChunk(chunkX, chunkZ);
+        let chunkData;
+        if (this.world.has(chunkKey)) {
+            console.log(`Using existing chunk data for ${chunkKey}`);
+            chunkData = this.world.get(chunkKey);
+        } else {
+            console.log(`Generating new chunk data for ${chunkKey}`);
+            chunkData = this.generateChunk(chunkX, chunkZ);
+            this.world.set(chunkKey, chunkData);
+        }
+        
+        let renderedBlocks = 0;
+        let solidBlocks = 0;
         
         for (const [blockKey, blockType] of chunkData.entries()) {
             if (blockType !== 'air') {
+                solidBlocks++;
                 const [x, y, z] = blockKey.split('_').map(Number);
                 if (this.shouldRenderBlock(x, y, z, chunkData)) {
                     this.createBlock(x, y, z, blockType);
                     chunkBlocks.add(blockKey);
+                    renderedBlocks++;
                 }
             }
         }
         
-        this.world.set(chunkKey, chunkData);
+        console.log(`Chunk ${chunkKey}: ${solidBlocks} solid blocks, ${renderedBlocks} rendered`);
         this.loadedChunks.set(chunkKey, chunkBlocks);
     }
     
