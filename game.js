@@ -222,7 +222,10 @@ class MinecraftClone {
         this.lastPlayerChunk = { x: spawnChunkX, z: spawnChunkZ };
         
         console.log(`About to render world...`);
-        this.renderWorld();
+        
+        // Load the spawn chunk properly into the rendering system
+        this.loadChunk(spawnChunkX, spawnChunkZ);
+        
         console.log(`World rendered. Total blocks in scene: ${this.blockMeshes.size}`);
         console.log(`Loaded chunks: ${this.loadedChunks.size}`);
     }
