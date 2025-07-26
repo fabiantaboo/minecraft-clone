@@ -179,22 +179,36 @@ class MinecraftClone {
         const spawnChunkX = Math.floor(spawnX / this.chunkSize);
         const spawnChunkZ = Math.floor(spawnZ / this.chunkSize);
         
+        console.log(`Generating spawn chunk at: ${spawnChunkX}, ${spawnChunkZ}`);
         const spawnChunk = this.generateChunk(spawnChunkX, spawnChunkZ);
         this.world.set(`${spawnChunkX}_${spawnChunkZ}`, spawnChunk);
         
-        let spawnY = this.worldHeight - 1;
+        console.log(`Chunk size: ${spawnChunk.size} blocks`);
+        
+        let spawnY = this.seaLevel + 10;
+        let foundGround = false;
+        
         for (let y = this.worldHeight - 1; y >= 0; y--) {
             const blockKey = `${spawnX}_${y}_${spawnZ}`;
             const blockType = spawnChunk.get(blockKey);
+            console.log(`Checking Y=${y}, block: ${blockType}`);
+            
             if (blockType && blockType !== 'air' && blockType !== 'water') {
                 spawnY = y + 3;
+                foundGround = true;
+                console.log(`Found ground at Y=${y}, spawning at Y=${spawnY}`);
                 break;
             }
         }
         
-        this.camera.position.set(spawnX + 0.5, spawnY, spawnZ + 0.5);
-        console.log(`Spawned at: ${spawnX}, ${spawnY}, ${spawnZ}`);
+        if (!foundGround) {
+            console.warn(`No ground found! Using default spawn height: ${spawnY}`);
+        }
         
+        this.camera.position.set(spawnX + 0.5, spawnY, spawnZ + 0.5);
+        console.log(`Final spawn position: ${spawnX + 0.5}, ${spawnY}, ${spawnZ + 0.5}`);
+        
+        this.lastPlayerChunk = { x: spawnChunkX, z: spawnChunkZ };
         this.renderWorld();
     }
     
@@ -567,7 +581,8 @@ class MinecraftClone {
         
         if (this.world.has(chunkKey)) {
             const chunk = this.world.get(chunkKey);
-            return chunk.get(blockKey) || 'air';
+            const blockType = chunk.get(blockKey) || 'air';
+            return blockType;
         }
         
         return 'air';
