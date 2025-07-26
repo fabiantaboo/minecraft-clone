@@ -122,6 +122,7 @@ class MinecraftClone {
         
         this.chunkSize = 16;
         this.renderDistance = 6; // Reduced for better performance
+        this.minRenderDistance = 4; // Never go below this to prevent invisible terrain
         
         // Ultra-aggressive LOD for maximum performance
         this.lodLevels = {
@@ -4470,6 +4471,29 @@ class MinecraftClone {
         const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
         const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         
+        // 🚨 EMERGENCY FAILSAFE: Force load immediate chunks if nothing is rendered
+        let totalVisibleInstances = 0;
+        for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
+            if (instancedMesh && instancedMesh.visible && instancedMesh.count > 0) {
+                totalVisibleInstances += instancedMesh.count;
+            }
+        }
+        
+        if (totalVisibleInstances === 0) {
+            console.log('🚨 EMERGENCY: No blocks visible! Force loading immediate chunks...');
+            // Force load immediate 3x3 chunk area
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const chunkX = playerChunkX + dx;
+                    const chunkZ = playerChunkZ + dz;
+                    const chunkKey = `${chunkX}_${chunkZ}`;
+                    if (!this.loadedChunks.has(chunkKey)) {
+                        this.loadChunk(chunkX, chunkZ);
+                    }
+                }
+            }
+        }
+        
         // Dynamic performance adjustment
         this.adjustPerformanceSettings();
         
@@ -4528,7 +4552,7 @@ class MinecraftClone {
     activateEmergencyPerformanceMode() {
         // 🚨 NOTFALL-PERFORMANCE MODUS - Maximale FPS um jeden Preis
         this.performanceMode = 'emergency';
-        this.renderDistance = 3; // Minimal render distance
+        this.renderDistance = Math.max(this.minRenderDistance, this.renderDistance); // Ensure minimum visibility
         
         // Deaktiviere aufwändige Features
         this.environmentSettings.fogEnabled = false;
@@ -4556,7 +4580,7 @@ class MinecraftClone {
     activateAggressivePerformanceMode() {
         // ⚡ AGGRESSIVE PERFORMANCE - Hohe FPS mit reduzierten Features
         this.performanceMode = 'aggressive';
-        this.renderDistance = Math.max(4, this.renderDistance - 1);
+        this.renderDistance = Math.max(this.minRenderDistance, this.renderDistance - 1);
         
         // Reduziere einige Features
         this.environmentSettings.particlesEnabled = false;
@@ -4692,7 +4716,7 @@ class MinecraftClone {
         console.log(`🧹 Memory cleanup: Unloaded ${chunksUnloaded} chunks, removed ${blocksRemoved} blocks`);
     }
     
-    // 🚀 ULTIMATIVE FRUSTUM CULLING für maximale Performance
+    // 🚀 FIXED FRUSTUM CULLING - No longer breaks terrain rendering
     performUltimateFrustumCulling() {
         // Update frustum
         this.camera.updateMatrix();
@@ -4706,16 +4730,13 @@ class MinecraftClone {
         
         let culledObjects = 0;
         
-        // Cull instanced meshes
+        // CRITICAL FIX: Don't cull instanced meshes based on their origin position
+        // InstancedMesh position is at (0,0,0), not the actual instance positions
+        // Keep all instanced meshes visible - let Three.js handle per-instance culling
         for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
-            if (instancedMesh && instancedMesh.visible) {
-                // Prüfe ob Mesh im Frustum
-                if (!this.frustum.containsPoint(instancedMesh.position)) {
-                    instancedMesh.visible = false;
-                    culledObjects++;
-                } else {
-                    instancedMesh.visible = true;
-                }
+            if (instancedMesh && instancedMesh.count > 0) {
+                // Always keep instanced meshes visible if they have instances
+                instancedMesh.visible = true;
             }
         }
         
@@ -4797,9 +4818,9 @@ class MinecraftClone {
         for (const chunk of chunks) {
             const chunkKey = `${chunk.x}_${chunk.z}`;
             
-            // Always load closest chunks for 360° coverage
-            // Use smart frustum culling for distant chunks
-            const shouldLoad = chunk.distance <= 1 || 
+            // 🚨 CRITICAL FIX: Always load closest chunks for 360° coverage
+            // Force loading of immediate area to prevent invisible terrain bug
+            const shouldLoad = chunk.distance <= 2 || // Always load 2-chunk radius
                               (chunk.distance <= 3 && this.isChunkInFrustum(chunk.x, chunk.z)) ||
                               (chunk.distance <= this.renderDistance && this.isChunkInExtendedFrustum(chunk.x, chunk.z));
             
@@ -4938,8 +4959,18 @@ class MinecraftClone {
         // Render blocks using instanced rendering
         this.renderInstancedBlocks(blocksToRender);
         
-        console.log(`Chunk ${chunkKey} (dist: ${distance}): ${solidBlocks} solid, ${renderedBlocks} rendered`);
+        console.log(`✅ Chunk ${chunkKey} (dist: ${distance}): ${solidBlocks} solid, ${renderedBlocks} rendered`);
         this.loadedChunks.set(chunkKey, chunkBlocks);
+        
+        // 🔍 CRITICAL DEBUG: Log instance counts after chunk loading
+        let totalInstances = 0;
+        for (const [blockType, instanceData] of this.instanceData.entries()) {
+            if (instanceData.count > 0) {
+                console.log(`📦 ${blockType}: ${instanceData.count} instances`);
+                totalInstances += instanceData.count;
+            }
+        }
+        console.log(`🎯 Total instances rendered: ${totalInstances}`);
     }
     
     renderInstancedBlocks(blocksToRender) {
@@ -5862,6 +5893,24 @@ class MinecraftClone {
             if (frameTime > 30) { // Unter 33 FPS
                 this.activateEmergencyPerformanceMode();
             }
+        }
+        
+        // 🔍 CRITICAL DEBUG: Check scene state before rendering
+        if (this.frameCount % 60 === 0) { // Log every 60 frames (1 second at 60fps)
+            let visibleInstancedMeshes = 0;
+            let totalInstances = 0;
+            let sceneObjects = this.scene.children.length;
+            
+            for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
+                if (instancedMesh && instancedMesh.visible && instancedMesh.count > 0) {
+                    visibleInstancedMeshes++;
+                    totalInstances += instancedMesh.count;
+                }
+            }
+            
+            console.log(`🎮 RENDER DEBUG: Scene objects: ${sceneObjects}, Visible meshes: ${visibleInstancedMeshes}, Total instances: ${totalInstances}`);
+            console.log(`📍 Player pos: (${this.camera.position.x.toFixed(1)}, ${this.camera.position.y.toFixed(1)}, ${this.camera.position.z.toFixed(1)})`);
+            console.log(`🎯 Loaded chunks: ${this.loadedChunks.size}, Render distance: ${this.renderDistance}`);
         }
         
         this.renderer.render(this.scene, this.camera);
