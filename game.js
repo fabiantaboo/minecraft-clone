@@ -51,17 +51,40 @@ class MinecraftClone {
         this.raycaster = new THREE.Raycaster();
         this.mouse2D = new THREE.Vector2();
         
+        // Shared geometry for all blocks
         this.blockGeometry = new THREE.BoxGeometry(1, 1, 1);
         this.blockMaterials = {};
+        
+        // Instanced rendering system
+        this.instancedMeshes = new Map(); // blockType -> InstancedMesh
+        this.instanceData = new Map(); // blockType -> { positions: [], count: 0 }
+        this.maxInstancesPerType = 50000; // Maximum instances per block type
+        
+        // Legacy system for compatibility
         this.blockMeshes = new Map();
         this.loadedChunks = new Map();
-        this.blockPool = new Map(); // Pool of reusable block meshes
+        this.blockPool = new Map();
+        
         this.chunkSize = 16;
-        this.renderDistance = 8; // Increased render distance for better coverage
+        this.renderDistance = 6; // Reduced for better performance
+        
+        // Ultra-aggressive LOD for maximum performance
         this.lodLevels = {
-            high: 2,    // Full detail chunks (distance 0-2) - increased for better player surrounding
-            medium: 4,  // Surface only chunks (distance 3-4) 
-            low: 6      // Outline only chunks (distance 5-6)
+            high: 1,     // Full detail chunks (distance 0-1)
+            medium: 2,   // Surface only chunks (distance 2)
+            low: 4,      // Sparse chunks (distance 3-4)
+            minimal: 6   // Outline only chunks (distance 5-6)
+        };
+        
+        // Dynamic performance scaling
+        this.targetFPS = 45;
+        this.performanceMode = 'balanced'; // 'performance', 'balanced', 'quality'
+        
+        // Performance tracking
+        this.renderStats = {
+            instancedBlocks: 0,
+            legacyBlocks: 0,
+            drawCalls: 0
         };
         this.frustum = new THREE.Frustum();
         this.lastPlayerChunk = { x: null, z: null };
@@ -93,8 +116,16 @@ class MinecraftClone {
         if (!this.renderer.getContext()) throw new Error('WebGL not supported');
         
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        
+        // Optimized shadow settings for performance
         this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap; // Faster than PCFSoft
+        this.renderer.shadowMap.autoUpdate = false; // Manual control for performance
+        
+        // Performance optimizations
+        this.renderer.sortObjects = false; // Disable sorting for instanced objects
+        this.renderer.antialias = false; // Disable for performance
+        this.renderer.powerPreference = "high-performance";
         
         this.initializeMaterials();
         
@@ -104,15 +135,20 @@ class MinecraftClone {
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(50, 100, 50);
         directionalLight.castShadow = true;
-        directionalLight.shadow.mapSize.width = 2048;
-        directionalLight.shadow.mapSize.height = 2048;
+        
+        // Optimized shadow settings for performance
+        directionalLight.shadow.mapSize.width = 1024; // Reduced for performance
+        directionalLight.shadow.mapSize.height = 1024;
         directionalLight.shadow.camera.near = 0.5;
-        directionalLight.shadow.camera.far = 500;
-        directionalLight.shadow.camera.left = -100;
-        directionalLight.shadow.camera.right = 100;
-        directionalLight.shadow.camera.top = 100;
-        directionalLight.shadow.camera.bottom = -100;
+        directionalLight.shadow.camera.far = 200; // Reduced range
+        directionalLight.shadow.camera.left = -50;
+        directionalLight.shadow.camera.right = 50;
+        directionalLight.shadow.camera.top = 50;
+        directionalLight.shadow.camera.bottom = -50;
+        directionalLight.shadow.bias = -0.0001;
+        
         this.scene.add(directionalLight);
+        this.directionalLight = directionalLight; // Store reference for dynamic updates
         
         this.setupControls();
         this.setupEventListeners();
@@ -626,6 +662,9 @@ class MinecraftClone {
         const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
         const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         
+        // Dynamic performance adjustment
+        this.adjustPerformanceSettings();
+        
         // Always ensure the player's current chunk is loaded (emergency fallback)
         const currentChunkKey = `${playerChunkX}_${playerChunkZ}`;
         if (!this.loadedChunks.has(currentChunkKey)) {
@@ -637,6 +676,31 @@ class MinecraftClone {
             this.updateChunks(playerChunkX, playerChunkZ);
             this.lastPlayerChunk.x = playerChunkX;
             this.lastPlayerChunk.z = playerChunkZ;
+        }
+    }
+    
+    adjustPerformanceSettings() {
+        // Get current FPS
+        const currentTime = performance.now();
+        if (this.lastFPSCheck && currentTime - this.lastFPSCheck > 2000) {
+            const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastFPSCheck));
+            
+            // Adjust render distance based on performance
+            if (fps < this.targetFPS - 10) {
+                // Performance mode - reduce quality for better FPS
+                this.renderDistance = Math.max(4, this.renderDistance - 1);
+                this.performanceMode = 'performance';
+            } else if (fps > this.targetFPS + 10 && this.renderDistance < 8) {
+                // Quality mode - increase quality if FPS allows
+                this.renderDistance = Math.min(8, this.renderDistance + 1);
+                this.performanceMode = 'quality';
+            } else {
+                this.performanceMode = 'balanced';
+            }
+            
+            this.lastFPSCheck = currentTime;
+        } else if (!this.lastFPSCheck) {
+            this.lastFPSCheck = currentTime;
         }
     }
     
@@ -652,31 +716,67 @@ class MinecraftClone {
             )
         );
         
-        for (let chunkX = playerChunkX - this.renderDistance; chunkX <= playerChunkX + this.renderDistance; chunkX++) {
-            for (let chunkZ = playerChunkZ - this.renderDistance; chunkZ <= playerChunkZ + this.renderDistance; chunkZ++) {
-                const chunkKey = `${chunkX}_${chunkZ}`;
-                const distance = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
-                
-                // Always render closest chunks (distance 0-2) regardless of frustum
-                // For distant chunks, use frustum culling
-                const shouldLoad = distance <= 2 || this.isChunkInFrustum(chunkX, chunkZ);
-                
-                if (shouldLoad) {
-                    chunksToKeep.add(chunkKey);
-                    
-                    if (!this.loadedChunks.has(chunkKey)) {
-                        chunksToLoad.add(chunkKey);
+        // Spiral loading pattern for better 360° coverage
+        const chunks = [];
+        for (let radius = 0; radius <= this.renderDistance; radius++) {
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) === radius) {
+                        chunks.push({
+                            x: playerChunkX + dx,
+                            z: playerChunkZ + dz,
+                            distance: radius
+                        });
                     }
+                }
+            }
+        }
+        
+        for (const chunk of chunks) {
+            const chunkKey = `${chunk.x}_${chunk.z}`;
+            
+            // Always load closest chunks for 360° coverage
+            // Use smart frustum culling for distant chunks
+            const shouldLoad = chunk.distance <= 1 || 
+                              (chunk.distance <= 3 && this.isChunkInFrustum(chunk.x, chunk.z)) ||
+                              (chunk.distance <= this.renderDistance && this.isChunkInExtendedFrustum(chunk.x, chunk.z));
+            
+            if (shouldLoad) {
+                chunksToKeep.add(chunkKey);
+                
+                if (!this.loadedChunks.has(chunkKey)) {
+                    chunksToLoad.add(chunkKey);
                 }
             }
         }
         
         this.unloadDistantChunks(chunksToKeep);
         
-        chunksToLoad.forEach(chunkKey => {
-            const [chunkX, chunkZ] = chunkKey.split('_').map(Number);
-            this.loadChunk(chunkX, chunkZ);
+        // Load chunks in priority order (closest first)
+        const sortedChunks = Array.from(chunksToLoad).map(key => {
+            const [x, z] = key.split('_').map(Number);
+            const distance = Math.max(Math.abs(x - playerChunkX), Math.abs(z - playerChunkZ));
+            return { key, x, z, distance };
+        }).sort((a, b) => a.distance - b.distance);
+        
+        sortedChunks.forEach(chunk => {
+            this.loadChunk(chunk.x, chunk.z);
         });
+    }
+    
+    isChunkInExtendedFrustum(chunkX, chunkZ) {
+        // Extended frustum for better 360° coverage
+        const chunkCenterX = chunkX * this.chunkSize + this.chunkSize / 2;
+        const chunkCenterZ = chunkZ * this.chunkSize + this.chunkSize / 2;
+        const playerY = this.camera.position.y;
+        
+        // Create even larger bounding sphere for extended coverage
+        const chunkSphere = new THREE.Sphere(
+            new THREE.Vector3(chunkCenterX, playerY, chunkCenterZ),
+            this.chunkSize * 2.0 // Much larger radius for 360° coverage
+        );
+        
+        return this.frustum.intersectsSphere(chunkSphere);
     }
     
     isChunkInFrustum(chunkX, chunkZ) {
@@ -727,6 +827,9 @@ class MinecraftClone {
             this.world.set(chunkKey, chunkData);
         }
         
+        // Group blocks by type for instanced rendering
+        const blocksToRender = new Map(); // blockType -> positions array
+        
         let renderedBlocks = 0;
         let solidBlocks = 0;
         
@@ -735,33 +838,73 @@ class MinecraftClone {
                 solidBlocks++;
                 const [x, y, z] = blockKey.split('_').map(Number);
                 
-                // Optimized LOD for better player experience
+                // Ultra-aggressive LOD for maximum performance
                 let shouldRender = false;
                 
                 if (distance <= this.lodLevels.high) {
-                    // High detail: render all visible blocks (immediate player area)
+                    // High detail: render all visible blocks in immediate area
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData);
                 } else if (distance <= this.lodLevels.medium) {
-                    // Medium detail: surface blocks + some underground for caves
+                    // Medium detail: surface and important underground blocks
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 (y > this.seaLevel - 5 || this.isTopSurface(x, y, z, chunkData));
+                                 (this.isTopSurface(x, y, z, chunkData) || 
+                                  (y < this.seaLevel && blockType === 'water'));
+                } else if (distance <= this.lodLevels.low) {
+                    // Low detail: sparse surface blocks only
+                    shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
+                                 this.isTopSurface(x, y, z, chunkData) &&
+                                 ((x + z) % 2 === 0) && y >= this.seaLevel - 2;
                 } else {
-                    // Low detail: only surface and prominent features
+                    // Minimal detail: ultra-sparse prominent features
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 (y > this.seaLevel + 10 || this.isTopSurface(x, y, z, chunkData)) &&
-                                 ((x + z) % 2 === 0);
+                                 this.isTopSurface(x, y, z, chunkData) &&
+                                 ((x + z) % 3 === 0) && 
+                                 (y > this.seaLevel + 5 || blockType === 'snow' || blockType === 'mountain_stone');
                 }
                 
                 if (shouldRender) {
-                    this.createBlock(x, y, z, blockType);
+                    if (!blocksToRender.has(blockType)) {
+                        blocksToRender.set(blockType, []);
+                    }
+                    blocksToRender.get(blockType).push({ x, y, z, key: blockKey });
                     chunkBlocks.add(blockKey);
                     renderedBlocks++;
                 }
             }
         }
         
+        // Render blocks using instanced rendering
+        this.renderInstancedBlocks(blocksToRender);
+        
         console.log(`Chunk ${chunkKey} (dist: ${distance}): ${solidBlocks} solid, ${renderedBlocks} rendered`);
         this.loadedChunks.set(chunkKey, chunkBlocks);
+    }
+    
+    renderInstancedBlocks(blocksToRender) {
+        for (const [blockType, positions] of blocksToRender) {
+            const instanceData = this.instanceData.get(blockType);
+            const instancedMesh = this.instancedMeshes.get(blockType);
+            
+            if (!instanceData || !instancedMesh) continue;
+            
+            // Add new positions to instance data
+            for (const pos of positions) {
+                if (instanceData.count < this.maxInstancesPerType) {
+                    instanceData.positions.push(pos);
+                    
+                    // Create transformation matrix
+                    const matrix = new THREE.Matrix4();
+                    matrix.setPosition(pos.x, pos.y, pos.z);
+                    
+                    instancedMesh.setMatrixAt(instanceData.count, matrix);
+                    instanceData.count++;
+                }
+            }
+            
+            // Update instance count and mark for update
+            instancedMesh.count = instanceData.count;
+            instancedMesh.instanceMatrix.needsUpdate = true;
+        }
     }
     
     isTopSurface(x, y, z, chunkData) {
@@ -772,6 +915,10 @@ class MinecraftClone {
     unloadChunk(chunkKey) {
         const chunkBlocks = this.loadedChunks.get(chunkKey);
         if (chunkBlocks) {
+            // Rebuild all instanced meshes without the unloaded blocks
+            this.rebuildInstancedMeshes(chunkBlocks);
+            
+            // Clean up legacy blocks
             chunkBlocks.forEach(blockKey => {
                 const block = this.blockMeshes.get(blockKey);
                 if (block) {
@@ -779,7 +926,69 @@ class MinecraftClone {
                     this.blockMeshes.delete(blockKey);
                 }
             });
+            
             this.loadedChunks.delete(chunkKey);
+        }
+    }
+    
+    rebuildInstancedMeshes(blocksToRemove) {
+        // Optimized rebuild - only rebuild affected block types
+        const affectedBlockTypes = new Set();
+        
+        // Identify which block types are affected
+        for (const blockKey of blocksToRemove) {
+            const [x, y, z] = blockKey.split('_').map(Number);
+            const chunkX = Math.floor(x / this.chunkSize);
+            const chunkZ = Math.floor(z / this.chunkSize);
+            const chunkWorldKey = `${chunkX}_${chunkZ}`;
+            
+            if (this.world.has(chunkWorldKey)) {
+                const chunk = this.world.get(chunkWorldKey);
+                const blockType = chunk.get(blockKey);
+                if (blockType && blockType !== 'air') {
+                    affectedBlockTypes.add(blockType);
+                }
+            }
+        }
+        
+        // Only reset affected block types
+        for (const blockType of affectedBlockTypes) {
+            const instanceData = this.instanceData.get(blockType);
+            const instancedMesh = this.instancedMeshes.get(blockType);
+            
+            if (instanceData && instancedMesh) {
+                instanceData.positions = [];
+                instanceData.count = 0;
+                instancedMesh.count = 0;
+            }
+        }
+        
+        // Rebuild only affected block types from all loaded chunks
+        for (const [chunkKey, chunkBlocks] of this.loadedChunks) {
+            if (chunkBlocks === blocksToRemove) continue;
+            
+            const blocksToRender = new Map();
+            
+            for (const blockKey of chunkBlocks) {
+                const [x, y, z] = blockKey.split('_').map(Number);
+                const chunkX = Math.floor(x / this.chunkSize);
+                const chunkZ = Math.floor(z / this.chunkSize);
+                const chunkWorldKey = `${chunkX}_${chunkZ}`;
+                
+                if (this.world.has(chunkWorldKey)) {
+                    const chunk = this.world.get(chunkWorldKey);
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && affectedBlockTypes.has(blockType)) {
+                        if (!blocksToRender.has(blockType)) {
+                            blocksToRender.set(blockType, []);
+                        }
+                        blocksToRender.get(blockType).push({ x, y, z, key: blockKey });
+                    }
+                }
+            }
+            
+            this.renderInstancedBlocks(blocksToRender);
         }
     }
     
@@ -838,18 +1047,57 @@ class MinecraftClone {
                 this.blockMaterials[blockType] = new THREE.MeshLambertMaterial({
                     color: this.blockTypes[blockType].color
                 });
+                
+                // Initialize instanced mesh for each block type
+                this.initInstancedMesh(blockType);
             }
         });
     }
     
+    initInstancedMesh(blockType) {
+        const material = this.blockMaterials[blockType];
+        const instancedMesh = new THREE.InstancedMesh(
+            this.blockGeometry, 
+            material, 
+            this.maxInstancesPerType
+        );
+        
+        instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        
+        // Selective shadow casting for performance
+        if (blockType === 'water' || blockType === 'leaves') {
+            instancedMesh.castShadow = false; // Transparent blocks don't need shadows
+        } else {
+            instancedMesh.castShadow = true;
+        }
+        instancedMesh.receiveShadow = true;
+        
+        // Performance optimization
+        instancedMesh.frustumCulled = false; // Let us handle culling
+        
+        // Initially hide all instances
+        instancedMesh.count = 0;
+        
+        this.instancedMeshes.set(blockType, instancedMesh);
+        this.instanceData.set(blockType, {
+            positions: [],
+            matrices: [],
+            count: 0
+        });
+        
+        this.scene.add(instancedMesh);
+    }
+    
     createBlock(x, y, z, blockType) {
+        // Legacy method - now handled by instanced rendering
+        // Only used for special cases like player interactions
         const key = `${x}_${y}_${z}`;
         if (this.blockMeshes.has(key)) return;
         
         const material = this.blockMaterials[blockType];
         if (!material) return;
         
-        // Try to get from pool first
+        // For special interactive blocks, still use individual meshes
         let block = this.getBlockFromPool(blockType);
         if (!block) {
             block = new THREE.Mesh(this.blockGeometry, material);
@@ -868,7 +1116,10 @@ class MinecraftClone {
         if (!this.blockPool.has(blockType)) {
             this.blockPool.set(blockType, []);
         }
-        return this.blockPool.get(blockType).pop();
+        const pool = this.blockPool.get(blockType);
+        
+        // Return reusable block or null
+        return pool.length > 0 ? pool.pop() : null;
     }
     
     returnBlockToPool(block) {
@@ -877,8 +1128,23 @@ class MinecraftClone {
             this.blockPool.set(blockType, []);
         }
         
-        this.scene.remove(block);
-        this.blockPool.get(blockType).push(block);
+        const pool = this.blockPool.get(blockType);
+        
+        // Limit pool size to prevent memory leaks
+        if (pool.length < 1000) {
+            this.scene.remove(block);
+            
+            // Reset block position and add to pool
+            block.position.set(0, 0, 0);
+            block.userData = {};
+            
+            pool.push(block);
+        } else {
+            // Dispose if pool is full
+            this.scene.remove(block);
+            block.geometry.dispose();
+            block.material.dispose();
+        }
     }
     
     update() {
@@ -1044,7 +1310,19 @@ class MinecraftClone {
         const currentTime = performance.now();
         if (currentTime - this.lastTime >= 1000) {
             const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
-            document.getElementById('fps').textContent = `FPS: ${fps}`;
+            
+            // Calculate performance stats
+            let totalInstancedBlocks = 0;
+            let activeDrawCalls = 0;
+            
+            for (const [blockType, instanceData] of this.instanceData) {
+                totalInstancedBlocks += instanceData.count;
+                if (instanceData.count > 0) activeDrawCalls++;
+            }
+            
+            document.getElementById('fps').textContent = 
+                `FPS: ${fps} | Blocks: ${totalInstancedBlocks} | Draws: ${activeDrawCalls} | Chunks: ${this.loadedChunks.size}`;
+            
             this.frameCount = 0;
             this.lastTime = currentTime;
         }
@@ -1054,10 +1332,37 @@ class MinecraftClone {
         this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera);
         this.raycaster.far = 10;
         
-        const blockObjects = Array.from(this.blockMeshes.values());
-        const intersects = this.raycaster.intersectObjects(blockObjects);
+        // Check instanced meshes first (more efficient)
+        const allIntersects = [];
         
-        return intersects.length > 0 ? intersects[0] : null;
+        for (const [blockType, instancedMesh] of this.instancedMeshes) {
+            if (instancedMesh.count > 0) {
+                const intersects = this.raycaster.intersectObject(instancedMesh);
+                for (const intersect of intersects) {
+                    // Get instance data
+                    const instanceData = this.instanceData.get(blockType);
+                    if (instanceData && intersect.instanceId < instanceData.positions.length) {
+                        const pos = instanceData.positions[intersect.instanceId];
+                        intersect.object.userData = { 
+                            x: pos.x, 
+                            y: pos.y, 
+                            z: pos.z, 
+                            blockType: blockType 
+                        };
+                        allIntersects.push(intersect);
+                    }
+                }
+            }
+        }
+        
+        // Also check legacy blocks
+        const blockObjects = Array.from(this.blockMeshes.values());
+        const legacyIntersects = this.raycaster.intersectObjects(blockObjects);
+        allIntersects.push(...legacyIntersects);
+        
+        // Sort by distance and return closest
+        allIntersects.sort((a, b) => a.distance - b.distance);
+        return allIntersects.length > 0 ? allIntersects[0] : null;
     }
     
     breakBlock() {
@@ -1073,8 +1378,13 @@ class MinecraftClone {
             if (this.world.has(chunkKey)) {
                 const chunk = this.world.get(chunkKey);
                 chunk.set(blockKey, 'air');
+                
+                // Force chunk reload to update instanced rendering
+                this.unloadChunk(chunkKey);
+                this.loadChunk(chunkX, chunkZ);
             }
             
+            // Also handle legacy blocks
             const block = this.blockMeshes.get(blockKey);
             if (block) {
                 this.scene.remove(block);
@@ -1096,12 +1406,14 @@ class MinecraftClone {
             
             let placeX = x, placeY = y, placeZ = z;
             
-            if (face.normal.x > 0) placeX++;
-            else if (face.normal.x < 0) placeX--;
-            else if (face.normal.y > 0) placeY++;
-            else if (face.normal.y < 0) placeY--;
-            else if (face.normal.z > 0) placeZ++;
-            else if (face.normal.z < 0) placeZ--;
+            if (face && face.normal) {
+                if (face.normal.x > 0) placeX++;
+                else if (face.normal.x < 0) placeX--;
+                else if (face.normal.y > 0) placeY++;
+                else if (face.normal.y < 0) placeY--;
+                else if (face.normal.z > 0) placeZ++;
+                else if (face.normal.z < 0) placeZ--;
+            }
             
             if (placeY >= 0 && placeY < this.worldHeight && this.getBlockAt(placeX, placeY, placeZ) === 'air') {
                 const playerPos = this.camera.position;
@@ -1115,13 +1427,10 @@ class MinecraftClone {
                     if (this.world.has(chunkKey)) {
                         const chunk = this.world.get(chunkKey);
                         chunk.set(blockKey, this.selectedBlockType);
-                    }
-                    
-                    this.createBlock(placeX, placeY, placeZ, this.selectedBlockType);
-                    
-                    const chunkBlocks = this.loadedChunks.get(chunkKey);
-                    if (chunkBlocks) {
-                        chunkBlocks.add(blockKey);
+                        
+                        // Force chunk reload to update instanced rendering
+                        this.unloadChunk(chunkKey);
+                        this.loadChunk(chunkX, chunkZ);
                     }
                 }
             }
@@ -1150,6 +1459,12 @@ class MinecraftClone {
         requestAnimationFrame(() => this.animate());
         this.update();
         this.renderWorld();
+        
+        // Update shadows only occasionally for performance
+        if (this.frameCount % 10 === 0) {
+            this.renderer.shadowMap.needsUpdate = true;
+        }
+        
         this.renderer.render(this.scene, this.camera);
     }
 }
