@@ -885,20 +885,68 @@ class MinecraftClone {
             }
         }
         
-        // 🧠 PHASE 4: POST-PROCESSING for NATURAL FEATURES
+        // 🔧 PHASE 4: TERRAIN CONTINUITY VALIDATION
+        this.ensureTerrainContinuity(chunk, heightMap, startX, startZ);
+        
+        // 🧠 PHASE 5: POST-PROCESSING for NATURAL FEATURES
         this.applyNaturalFeatures(chunk, heightMap, riverMap, startX, startZ);
         this.addCoherentVegetation(chunk, heightMap, startX, startZ);
         this.addGeologicalStructures(chunk, heightMap, supportMap, startX, startZ);
         
-        // 🚀 PHASE 5: ULTIMATIVE ANTI-FLOATING-BLOCK POST-PROCESSING
+        // 🚀 PHASE 6: SIMPLIFIED ANTI-FLOATING-BLOCK POST-PROCESSING
         this.applyUltimateAntiFloatingBlockSystem(chunk, heightMap, supportMap, startX, startZ);
         
-        // 🧹 PHASE 6: FINAL TERRAIN CLEANUP & VALIDATION
+        // 🧹 PHASE 7: FINAL TERRAIN CLEANUP & VALIDATION
         this.performFinalTerrainCleanup(chunk, heightMap, startX, startZ);
         
         return chunk;
     }
     
+    // ========== 🔧 TERRAIN CONTINUITY VALIDATION ==========
+    
+    ensureTerrainContinuity(chunk, heightMap, startX, startZ) {
+        // 🔧 ENSURES CONTINUOUS SOLID TERRAIN - No gaps or patches
+        console.log('🔧 Ensuring terrain continuity...');
+        
+        let gapsFixed = 0;
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const terrainHeight = heightMap[x][z];
+                
+                // Check for gaps in terrain column
+                for (let y = 1; y < terrainHeight; y++) {
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    // If we find air where there should be solid ground
+                    if (!blockType || blockType === 'air') {
+                        // Fill with appropriate material based on depth
+                        const depthFromSurface = terrainHeight - y;
+                        let fillMaterial;
+                        
+                        if (depthFromSurface <= 1) {
+                            fillMaterial = 'grass';
+                        } else if (depthFromSurface <= 3) {
+                            fillMaterial = 'dirt';
+                        } else {
+                            fillMaterial = 'stone';
+                        }
+                        
+                        chunk.set(blockKey, fillMaterial);
+                        gapsFixed++;
+                    }
+                }
+            }
+        }
+        
+        if (gapsFixed > 0) {
+            console.log(`🔧 Fixed ${gapsFixed} terrain continuity gaps`);
+        }
+    }
+
     // ==================== 🧠 INTELLIGENT TERRAIN ALGORITHMS ====================
     
     generateIntelligentHeightMap(startX, startZ) {
@@ -1847,7 +1895,11 @@ class MinecraftClone {
     }
     
     generateGeologicalColumn(chunk, worldX, worldZ, terrainHeight, biome, erosionLevel, isRiver, supportLevel) {
-        // 🧠 GENERATE REALISTIC GEOLOGICAL COLUMN with proper layering
+        // 🧠 GENERATE REALISTIC GEOLOGICAL COLUMN with SOLID BASE and proper layering
+        
+        // 🔧 MINIMUM SOLID LAYER THICKNESS to prevent patchy terrain
+        const minSolidThickness = 4; // Minimum solid blocks from surface down
+        const guaranteedSolidHeight = Math.max(terrainHeight - minSolidThickness, 1);
         
         for (let y = 0; y < this.worldHeight; y++) {
             const blockKey = `${worldX}_${y}_${worldZ}`;
@@ -1860,13 +1912,26 @@ class MinecraftClone {
                 blockType = this.getGeologicalBlockType(y, terrainHeight, biome, erosionLevel, 
                                                        supportLevel, worldX, worldZ);
                 
-                // 🧠 CAVE SYSTEMS - Only where geologically stable
-                if (y < terrainHeight - 3 && supportLevel > 0.5) {
-                    const caveResult = this.generateStableCaveSystem(worldX, y, worldZ, biome, supportLevel);
-                    if (caveResult.isAir) {
-                        blockType = 'air';
+                // 🔧 FORCE SOLID BLOCKS in top layer to ensure continuous terrain
+                if (y >= guaranteedSolidHeight) {
+                    // Top layers must be solid - no caves allowed
+                    // blockType already set above, keep it solid
+                } else {
+                    // 🧠 CAVE SYSTEMS - Only in deeper layers and where geologically stable
+                    if (y < guaranteedSolidHeight && supportLevel > 0.6) {
+                        const caveResult = this.generateStableCaveSystem(worldX, y, worldZ, biome, supportLevel);
+                        if (caveResult.isAir) {
+                            blockType = 'air';
+                        }
                     }
                 }
+                
+                // 🔧 FALLBACK: Ensure we never have air in terrain column without explicit cave
+                if (blockType === 'air' && y >= guaranteedSolidHeight) {
+                    blockType = this.getGeologicalBlockType(y, terrainHeight, biome, erosionLevel, 
+                                                           supportLevel, worldX, worldZ);
+                }
+                
             } else if (isRiver && y <= this.seaLevel) {
                 blockType = 'water';
             } else if (y <= this.seaLevel && terrainHeight <= this.seaLevel) {
@@ -1878,72 +1943,103 @@ class MinecraftClone {
     }
     
     getGeologicalBlockType(y, terrainHeight, biome, erosionLevel, supportLevel, worldX, worldZ) {
-        // 🧠 GEOLOGICAL REALISM: Proper rock/soil/surface layering
+        // 🧠 GEOLOGICAL REALISM: Proper rock/soil/surface layering with GUARANTEED SOLID BLOCKS
         
         const depthFromSurface = terrainHeight - y;
         const rockDepth = 8 + Math.floor(erosionLevel * 4); // Deeper rock in eroded areas
         
+        // 🔧 FALLBACK PROTECTION: Always return a solid block type
+        let blockType = 'stone'; // Default fallback
+        
         // Deep bedrock layer
         if (depthFromSurface > rockDepth) {
-            return this.getBedrockType(y, biome);
+            blockType = this.getBedrockType(y, biome);
         }
-        
         // Rock layer (varies by biome)
-        if (depthFromSurface > 3) {
-            return this.getRockType(biome, y, terrainHeight);
+        else if (depthFromSurface > 3) {
+            blockType = this.getRockType(biome, y, terrainHeight);
         }
-        
         // Soil layer
-        if (depthFromSurface > 1) {
-            return this.getSoilType(biome, erosionLevel);
+        else if (depthFromSurface > 1) {
+            blockType = this.getSoilType(biome, erosionLevel);
+        }
+        // Surface layer
+        else {
+            blockType = this.getSurfaceBlockType(biome, y, terrainHeight, worldX, worldZ);
         }
         
-        // Surface layer
-        return this.getSurfaceBlockType(biome, y, terrainHeight, worldX, worldZ);
+        // 🔧 SAFETY CHECK: Never return null/undefined - always solid
+        if (!blockType || blockType === 'air') {
+            blockType = 'stone'; // Emergency fallback
+        }
+        
+        return blockType;
     }
     
     getBedrockType(y, biome) {
-        // Different bedrock types based on geological formations
+        // Different bedrock types based on geological formations with SOLID FALLBACK
+        let blockType = 'stone'; // Default fallback
+        
         switch (biome) {
             case 'mountain':
             case 'snow_mountain':
-                return 'stone';
+                blockType = 'stone';
+                break;
             case 'desert':
             case 'canyon':
-                return y % 3 === 0 ? 'stone' : 'sand';
+                blockType = y % 3 === 0 ? 'stone' : 'sandstone'; // Use sandstone instead of sand for solid structure
+                break;
             default:
-                return 'stone';
+                blockType = 'stone';
         }
+        
+        // 🔧 SAFETY: Always return solid block
+        return blockType || 'stone';
     }
     
     getRockType(biome, y, terrainHeight) {
-        // Realistic rock formations
+        // Realistic rock formations with SOLID FALLBACK
+        let blockType = 'stone'; // Default fallback
+        
         switch (biome) {
             case 'mountain':
             case 'snow_mountain':
-                return 'stone';
+                blockType = 'stone';
+                break;
             case 'desert':
             case 'canyon':
-                return y > terrainHeight - 6 ? 'sand' : 'stone';
+                blockType = y > terrainHeight - 6 ? 'sandstone' : 'stone'; // Use sandstone for structure
+                break;
             case 'valley':
             case 'plains':
-                return y > terrainHeight - 5 ? 'dirt' : 'stone';
+                blockType = y > terrainHeight - 5 ? 'dirt' : 'stone';
+                break;
             default:
-                return 'stone';
+                blockType = 'stone';
         }
+        
+        // 🔧 SAFETY: Always return solid block
+        return blockType || 'stone';
     }
     
     getSoilType(biome, erosionLevel) {
-        // Soil formation based on biome and erosion
+        // Soil formation based on biome and erosion with SOLID FALLBACK
+        let blockType = 'dirt'; // Default fallback
+        
         switch (biome) {
             case 'desert':
             case 'canyon':
-                return 'sand';
+                blockType = 'sand';
+                break;
             case 'tundra':
-                return erosionLevel > 0.5 ? 'stone' : 'dirt';
+                blockType = erosionLevel > 0.5 ? 'stone' : 'dirt';
+                break;
             default:
-                return 'dirt';
+                blockType = 'dirt';
         }
+        
+        // 🔧 SAFETY: Always return solid block
+        return blockType || 'dirt';
     }
     
     generateStableCaveSystem(worldX, y, worldZ, biome, supportLevel) {
@@ -1966,30 +2062,35 @@ class MinecraftClone {
         const stabilityFactor = Math.pow(supportLevel, 1.5);
         const geologicalFactor = rockLayer.hardness * rockLayer.porosity;
         
-        let caveThreshold = 0.65;
+        // 🔧 REDUCED CAVE FREQUENCY: Higher thresholds and depth restrictions
+        let caveThreshold = 0.82;
+        const minCaveDepth = this.seaLevel + 8; // Caves only in deeper layers
         
-        // 🧠 INTELLIGENT CAVE PLACEMENT
+        // 🧠 CONSERVATIVE CAVE PLACEMENT - Reduced frequency
         let isCave = false;
         
-        // Major cave chambers - rare but large
-        if (Math.abs(chamberSystem) > 0.7 && supportLevel > 0.8 && geologicalFactor > 0.4) {
-            isCave = true;
-            // Generate larger chambers
-            if (Math.abs(chamberSystem) > 0.8) {
-                return { isAir: true, caveType: 'chamber', connectivity: networkConnectivity };
+        // Only generate caves if we're deep enough
+        if (y < minCaveDepth) {
+            // Major cave chambers - much rarer but large
+            if (Math.abs(chamberSystem) > 0.85 && supportLevel > 0.9 && geologicalFactor > 0.5) {
+                isCave = true;
+                // Generate larger chambers
+                if (Math.abs(chamberSystem) > 0.9) {
+                    return { isAir: true, caveType: 'chamber', connectivity: networkConnectivity };
+                }
             }
-        }
-        
-        // Tunnel networks - connecting passages
-        else if (Math.abs(tunnelNetwork) > 0.6 && supportLevel > 0.6 && networkConnectivity > 0.3) {
-            isCave = true;
-            return { isAir: true, caveType: 'tunnel', connectivity: networkConnectivity };
-        }
-        
-        // Major cave systems - primary caves
-        else if (majorCaveSystem > caveThreshold && supportLevel > 0.7 && geologicalFactor > 0.3) {
-            isCave = true;
-            return { isAir: true, caveType: 'cave', connectivity: networkConnectivity };
+            
+            // Tunnel networks - much more restrictive
+            else if (Math.abs(tunnelNetwork) > 0.8 && supportLevel > 0.8 && networkConnectivity > 0.5) {
+                isCave = true;
+                return { isAir: true, caveType: 'tunnel', connectivity: networkConnectivity };
+            }
+            
+            // Major cave systems - primary caves with higher threshold
+            else if (majorCaveSystem > caveThreshold && supportLevel > 0.85 && geologicalFactor > 0.4) {
+                isCave = true;
+                return { isAir: true, caveType: 'cave', connectivity: networkConnectivity };
+            }
         }
         
         // 🌊 WATER-FILLED CAVES below water table
@@ -2133,22 +2234,16 @@ class MinecraftClone {
     // ========== 🚀 ULTIMATIVE ANTI-FLOATING-BLOCK SYSTEM ==========
     
     applyUltimateAntiFloatingBlockSystem(chunk, heightMap, supportMap, startX, startZ) {
-        // 🚨 ULTIMATIVE ZERO-TOLERANCE ANTI-FLOATING-BLOCK SYSTEM
-        console.log('🚀 Applying ULTIMATE Anti-Floating-Block System...');
+        // 🔧 SIMPLIFIED ANTI-FLOATING-BLOCK SYSTEM - Less aggressive
+        console.log('🚀 Applying Simplified Anti-Floating-Block System...');
         
-        // PHASE 1: GRAVITATIONAL COLLAPSE SIMULATION
+        // PHASE 1: SIMPLE GRAVITATIONAL CHECK (less aggressive)
         this.simulateGravitationalCollapse(chunk, heightMap, supportMap, startX, startZ);
         
-        // PHASE 2: RECURSIVE SUPPORT VALIDATION
-        this.recursivelyValidateSupport(chunk, heightMap, startX, startZ);
+        // PHASE 2: Basic validation only for obvious floating blocks
+        this.basicFloatingBlockCheck(chunk, heightMap, startX, startZ);
         
-        // PHASE 3: CONNECTED COMPONENTS ANALYSIS
-        this.removeDisconnectedComponents(chunk, heightMap, startX, startZ);
-        
-        // PHASE 4: STRUCTURAL INTEGRITY ENFORCEMENT
-        this.enforceStructuralIntegrity(chunk, heightMap, supportMap, startX, startZ);
-        
-        console.log('✅ Anti-Floating-Block System completed - ZERO floating blocks guaranteed!');
+        console.log('✅ Simplified Anti-Floating-Block System completed!');
     }
     
     simulateGravitationalCollapse(chunk, heightMap, supportMap, startX, startZ) {
@@ -2173,11 +2268,13 @@ class MinecraftClone {
                             const lateralSupport = this.calculateLateralSupport(chunk, worldX, y, worldZ, startX, startZ);
                             const totalSupport = supportBelow * 0.8 + lateralSupport * 0.2;
                             
-                            // KRITISCHE SUPPORT-SCHWELLE: Blöcke mit unzureichendem Support fallen
-                            if (totalSupport < 0.3) {
-                                // Simuliere freien Fall
-                                const fallDistance = this.simulateBlockFall(chunk, worldX, y, worldZ, blockType, startX, startZ);
-                                if (fallDistance > 0) {
+                            // 🔧 SIMPLIFIED SUPPORT CHECK: Only remove truly floating blocks
+                            if (totalSupport < 0.1) { // Much lower threshold - only truly floating
+                                // Only remove if block is completely unsupported
+                                const hasAnySupport = this.hasMinimalSupport(chunk, worldX, y, worldZ, startX, startZ);
+                                if (!hasAnySupport) {
+                                    // Simply remove the floating block instead of complex fall simulation
+                                    chunk.set(blockKey, 'air');
                                     changesThisIteration++;
                                     blocksCollapsed++;
                                 }
@@ -2674,6 +2771,95 @@ class MinecraftClone {
         return nearestSupportDistance > maxFloatingHeight;
     }
     
+    hasMinimalSupport(chunk, worldX, y, worldZ, startX, startZ) {
+        // 🔧 SIMPLIFIED SUPPORT CHECK - Only check for any support at all
+        if (y <= 1) return true; // Bedrock level always supported
+        
+        // Check direct support below
+        const belowKey = `${worldX}_${y-1}_${worldZ}`;
+        const blockBelow = chunk.get(belowKey);
+        if (blockBelow && blockBelow !== 'air' && blockBelow !== 'water') {
+            return true; // Has solid block below
+        }
+        
+        // Check adjacent support (at least one solid neighbor)
+        const directions = [
+            {dx: 1, dz: 0}, {dx: -1, dz: 0}, 
+            {dx: 0, dz: 1}, {dx: 0, dz: -1}
+        ];
+        
+        for (const dir of directions) {
+            const neighborX = worldX + dir.dx;
+            const neighborZ = worldZ + dir.dz;
+            const neighborKey = `${neighborX}_${y}_${neighborZ}`;
+            const neighborBlock = chunk.get(neighborKey);
+            
+            if (neighborBlock && neighborBlock !== 'air' && neighborBlock !== 'water') {
+                // Check if neighbor has support below
+                const neighborBelowKey = `${neighborX}_${y-1}_${neighborZ}`;
+                const neighborBelow = chunk.get(neighborBelowKey);
+                if (neighborBelow && neighborBelow !== 'air' && neighborBelow !== 'water') {
+                    return true; // Neighbor is supported, provides lateral support
+                }
+            }
+        }
+        
+        return false; // No minimal support found
+    }
+    
+    basicFloatingBlockCheck(chunk, heightMap, startX, startZ) {
+        // 🔧 BASIC floating block removal - only obvious cases
+        let removedCount = 0;
+        
+        for (let y = 2; y < this.worldHeight - 1; y++) {
+            for (let x = 0; x < this.chunkSize; x++) {
+                for (let z = 0; z < this.chunkSize; z++) {
+                    const worldX = startX + x;
+                    const worldZ = startZ + z;
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && blockType !== 'water' && 
+                        blockType !== 'bedrock') {
+                        
+                        // Only remove if completely isolated (no neighbors at all)
+                        if (this.isCompletelyIsolated(chunk, worldX, y, worldZ)) {
+                            chunk.set(blockKey, 'air');
+                            removedCount++;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (removedCount > 0) {
+            console.log(`🔧 Removed ${removedCount} completely isolated floating blocks`);
+        }
+    }
+    
+    isCompletelyIsolated(chunk, worldX, y, worldZ) {
+        // Check all 6 directions (including up/down)
+        const directions = [
+            {dx: 0, dy: 1, dz: 0}, {dx: 0, dy: -1, dz: 0},
+            {dx: 1, dy: 0, dz: 0}, {dx: -1, dy: 0, dz: 0},
+            {dx: 0, dy: 0, dz: 1}, {dx: 0, dy: 0, dz: -1}
+        ];
+        
+        for (const dir of directions) {
+            const neighborX = worldX + dir.dx;
+            const neighborY = y + dir.dy;
+            const neighborZ = worldZ + dir.dz;
+            const neighborKey = `${neighborX}_${neighborY}_${neighborZ}`;
+            const neighborBlock = chunk.get(neighborKey);
+            
+            if (neighborBlock && neighborBlock !== 'air' && neighborBlock !== 'water') {
+                return false; // Has at least one solid neighbor
+            }
+        }
+        
+        return true; // Completely isolated
+    }
+
     performFinalTerrainCleanup(chunk, heightMap, startX, startZ) {
         // 🧹 FINALES TERRAIN CLEANUP & VALIDATION SYSTEM
         console.log('🧹 Performing final terrain cleanup...');
