@@ -190,10 +190,22 @@ class MinecraftClone {
         this.frustum = new THREE.Frustum();
         this.lastPlayerChunk = { x: null, z: null };
         
+        // Loading system
+        this.loadingSystem = {
+            isLoading: true,
+            totalChunks: 0,
+            loadedChunks: 0,
+            currentTask: 'Initializing...',
+            preloadRadius: 3, // 7x7 area (3 radius = 7x7)
+            progressElement: null,
+            progressTextElement: null,
+            loadingScreenElement: null
+        };
+        
         try {
+            this.initializeLoadingScreen();
             this.initializePerlinNoise();
             this.init();
-            this.animate();
         } catch (error) {
             console.error('Game initialization failed:', error);
             this.showError('Failed to initialize game. Please check if WebGL is supported.');
@@ -334,11 +346,16 @@ class MinecraftClone {
         
         document.addEventListener('mousedown', (event) => {
             if (this.isPointerLocked) {
+                console.log(`🖱️ Mouse button ${event.button} clicked (0=left, 2=right)`);
                 if (event.button === 0) {
+                    console.log('🔨 Left click - breaking block');
                     this.breakBlock();
                 } else if (event.button === 2) {
+                    console.log('🧱 Right click - placing block');
                     this.placeBlock();
                 }
+            } else {
+                console.log('🖱️ Mouse clicked but pointer not locked');
             }
         });
         
@@ -464,15 +481,8 @@ class MinecraftClone {
         
         this.lastPlayerChunk = { x: spawnChunkX, z: spawnChunkZ };
         
-        // Load spawn chunk and immediate neighbors for better initial experience
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dz = -1; dz <= 1; dz++) {
-                this.loadChunk(spawnChunkX + dx, spawnChunkZ + dz);
-            }
-        }
-        
-        console.log(`🌍 World loaded. Total blocks in scene: ${this.blockMeshes.size}`);
-        console.log(`Loaded chunks: ${this.loadedChunks.size}`);
+        // Start asynchronous preloading system
+        this.startPreloading(spawnChunkX, spawnChunkZ);
     }
     
     // Simple terrain height calculator for emergency spawn fallback
@@ -6606,20 +6616,26 @@ class MinecraftClone {
         const allIntersects = [];
         
         for (const [blockType, instancedMesh] of this.instancedMeshes) {
-            if (instancedMesh.count > 0) {
+            if (instancedMesh && instancedMesh.count > 0) {
                 const intersects = this.raycaster.intersectObject(instancedMesh);
                 for (const intersect of intersects) {
-                    // Get instance data
+                    // Get instance data and validate instanceId
                     const instanceData = this.instanceData.get(blockType);
-                    if (instanceData && intersect.instanceId < instanceData.positions.length) {
+                    if (instanceData && 
+                        typeof intersect.instanceId === 'number' && 
+                        intersect.instanceId >= 0 && 
+                        intersect.instanceId < instanceData.positions.length) {
+                        
                         const pos = instanceData.positions[intersect.instanceId];
-                        intersect.object.userData = { 
-                            x: pos.x, 
-                            y: pos.y, 
-                            z: pos.z, 
-                            blockType: blockType 
-                        };
-                        allIntersects.push(intersect);
+                        if (pos) {
+                            intersect.object.userData = { 
+                                x: pos.x, 
+                                y: pos.y, 
+                                z: pos.z, 
+                                blockType: blockType 
+                            };
+                            allIntersects.push(intersect);
+                        }
                     }
                 }
             }
@@ -6627,8 +6643,10 @@ class MinecraftClone {
         
         // Also check legacy blocks
         const blockObjects = Array.from(this.blockMeshes.values());
-        const legacyIntersects = this.raycaster.intersectObjects(blockObjects);
-        allIntersects.push(...legacyIntersects);
+        if (blockObjects.length > 0) {
+            const legacyIntersects = this.raycaster.intersectObjects(blockObjects);
+            allIntersects.push(...legacyIntersects);
+        }
         
         // Sort by distance and return closest
         allIntersects.sort((a, b) => a.distance - b.distance);
@@ -6637,45 +6655,66 @@ class MinecraftClone {
     
     breakBlock() {
         const target = this.getTargetBlock();
-        if (target) {
-            const { x, y, z } = target.object.userData;
+        if (target && target.object && target.object.userData) {
+            const { x, y, z, blockType } = target.object.userData;
+            
+            console.log(`🔨 Breaking block at (${x}, ${y}, ${z}) - Type: ${blockType || 'unknown'}`);
             
             const chunkX = Math.floor(x / this.chunkSize);
             const chunkZ = Math.floor(z / this.chunkSize);
             const chunkKey = `${chunkX}_${chunkZ}`;
             const blockKey = `${x}_${y}_${z}`;
             
+            let blockRemoved = false;
+            
+            // Handle world data update
             if (this.world.has(chunkKey)) {
                 const chunk = this.world.get(chunkKey);
-                chunk.set(blockKey, 'air');
-                
-                // Force chunk reload to update instanced rendering
-                this.unloadChunk(chunkKey);
-                this.loadChunk(chunkX, chunkZ);
+                if (chunk.has(blockKey)) {
+                    chunk.set(blockKey, 'air');
+                    blockRemoved = true;
+                    console.log(`✅ Block removed from world data`);
+                }
             }
             
-            // Also handle legacy blocks
-            const block = this.blockMeshes.get(blockKey);
-            if (block) {
-                this.scene.remove(block);
+            // Handle legacy blocks
+            const legacyBlock = this.blockMeshes.get(blockKey);
+            if (legacyBlock) {
+                this.scene.remove(legacyBlock);
                 this.blockMeshes.delete(blockKey);
+                blockRemoved = true;
+                console.log(`✅ Legacy block removed from scene`);
                 
                 const chunkBlocks = this.loadedChunks.get(chunkKey);
                 if (chunkBlocks) {
                     chunkBlocks.delete(blockKey);
                 }
             }
+            
+            // Force chunk reload to update instanced rendering
+            if (blockRemoved) {
+                this.unloadChunk(chunkKey);
+                this.loadChunk(chunkX, chunkZ);
+                console.log(`🔄 Chunk ${chunkKey} reloaded to update rendering`);
+            } else {
+                console.warn(`⚠️ No block found to remove at (${x}, ${y}, ${z})`);
+            }
+        } else {
+            console.log(`❌ No target block found for breaking`);
         }
     }
     
     placeBlock() {
         const target = this.getTargetBlock();
-        if (target) {
-            const { x, y, z } = target.object.userData;
+        if (target && target.object && target.object.userData) {
+            const { x, y, z, blockType } = target.object.userData;
             const face = target.face;
+            
+            console.log(`🧱 Attempting to place ${this.selectedBlockType} block adjacent to (${x}, ${y}, ${z})`);
             
             let placeX = x, placeY = y, placeZ = z;
             
+            // Calculate placement position based on face normal
             if (face && face.normal) {
                 if (face.normal.x > 0) placeX++;
                 else if (face.normal.x < 0) placeX--;
@@ -6683,27 +6722,62 @@ class MinecraftClone {
                 else if (face.normal.y < 0) placeY--;
                 else if (face.normal.z > 0) placeZ++;
                 else if (face.normal.z < 0) placeZ--;
+                
+                console.log(`📍 Calculated placement position: (${placeX}, ${placeY}, ${placeZ})`);
+            } else {
+                console.warn('⚠️ No face normal found, using target block position');
             }
             
-            if (placeY >= 0 && placeY < this.worldHeight && this.getBlockAt(placeX, placeY, placeZ) === 'air') {
-                const playerPos = this.camera.position;
-                const blockCenter = new THREE.Vector3(placeX + 0.5, placeY + 0.5, placeZ + 0.5);
-                if (playerPos.distanceTo(blockCenter) > 1.5) {
-                    const chunkX = Math.floor(placeX / this.chunkSize);
-                    const chunkZ = Math.floor(placeZ / this.chunkSize);
-                    const chunkKey = `${chunkX}_${chunkZ}`;
-                    const blockKey = `${placeX}_${placeY}_${placeZ}`;
-                    
-                    if (this.world.has(chunkKey)) {
-                        const chunk = this.world.get(chunkKey);
-                        chunk.set(blockKey, this.selectedBlockType);
-                        
-                        // Force chunk reload to update instanced rendering
-                        this.unloadChunk(chunkKey);
-                        this.loadChunk(chunkX, chunkZ);
-                    }
-                }
+            // Validate placement position
+            if (placeY < 0 || placeY >= this.worldHeight) {
+                console.warn(`❌ Invalid Y position: ${placeY} (must be 0-${this.worldHeight-1})`);
+                return;
             }
+            
+            // Check if position is air/empty
+            const existingBlock = this.getBlockAt(placeX, placeY, placeZ);
+            if (existingBlock !== 'air') {
+                console.warn(`❌ Position occupied by ${existingBlock}, cannot place block`);
+                return;
+            }
+            
+            // Check distance from player (prevent placing inside player)
+            const playerPos = this.camera.position;
+            const blockCenter = new THREE.Vector3(placeX + 0.5, placeY + 0.5, placeZ + 0.5);
+            const distance = playerPos.distanceTo(blockCenter);
+            
+            if (distance < 1.5) {
+                console.warn(`❌ Too close to player (distance: ${distance.toFixed(2)}), cannot place block`);
+                return;
+            }
+            
+            // Place the block
+            const chunkX = Math.floor(placeX / this.chunkSize);
+            const chunkZ = Math.floor(placeZ / this.chunkSize);
+            const chunkKey = `${chunkX}_${chunkZ}`;
+            const blockKey = `${placeX}_${placeY}_${placeZ}`;
+            
+            let blockPlaced = false;
+            
+            if (this.world.has(chunkKey)) {
+                const chunk = this.world.get(chunkKey);
+                chunk.set(blockKey, this.selectedBlockType);
+                blockPlaced = true;
+                console.log(`✅ Block placed in world data`);
+            } else {
+                console.warn(`⚠️ Chunk ${chunkKey} not loaded, cannot place block`);
+                return;
+            }
+            
+            // Force chunk reload to update instanced rendering
+            if (blockPlaced) {
+                this.unloadChunk(chunkKey);
+                this.loadChunk(chunkX, chunkZ);
+                console.log(`🔄 Chunk ${chunkKey} reloaded to update rendering`);
+                console.log(`✅ Successfully placed ${this.selectedBlockType} block at (${placeX}, ${placeY}, ${placeZ})`);
+            }
+        } else {
+            console.log(`❌ No target block found for placement`);
         }
     }
     
@@ -6743,7 +6817,7 @@ class MinecraftClone {
         const target = this.getTargetBlock();
         
         if (target && target.object.userData) {
-            const { x, y, z } = target.object.userData;
+            const { x, y, z, blockType } = target.object.userData;
             
             // Update wireframe position
             this.targetBlockWireframe.position.set(x + 0.5, y + 0.5, z + 0.5);
@@ -6782,6 +6856,104 @@ class MinecraftClone {
             this.targetBlockHelper.visible = false;
             this.currentTargetBlock = null;
         }
+    }
+    
+    // Loading screen system
+    initializeLoadingScreen() {
+        this.loadingSystem.loadingScreenElement = document.getElementById('loadingScreen');
+        this.loadingSystem.progressElement = document.getElementById('progressBar');
+        this.loadingSystem.progressTextElement = document.getElementById('progressText');
+        
+        this.updateLoadingProgress(0, 'Initializing game systems...');
+        console.log('🔄 Loading screen initialized');
+    }
+    
+    updateLoadingProgress(percentage, task) {
+        if (this.loadingSystem.progressElement) {
+            this.loadingSystem.progressElement.style.width = `${percentage}%`;
+        }
+        if (this.loadingSystem.progressTextElement) {
+            this.loadingSystem.progressTextElement.textContent = task;
+        }
+        this.loadingSystem.currentTask = task;
+        console.log(`🔄 Loading: ${percentage.toFixed(1)}% - ${task}`);
+    }
+    
+    hideLoadingScreen() {
+        if (this.loadingSystem.loadingScreenElement) {
+            this.loadingSystem.loadingScreenElement.classList.add('hidden');
+        }
+        this.loadingSystem.isLoading = false;
+        console.log('✅ Loading complete - starting game');
+        
+        // Start the animation loop only after loading is complete
+        this.animate();
+    }
+    
+    async startPreloading(spawnChunkX, spawnChunkZ) {
+        // Calculate total chunks to load in radius
+        const radius = this.loadingSystem.preloadRadius;
+        const chunksToLoad = [];
+        
+        // Generate spiral loading pattern for better visual feedback
+        for (let r = 0; r <= radius; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dz = -r; dz <= r; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) === r) {
+                        chunksToLoad.push({
+                            x: spawnChunkX + dx,
+                            z: spawnChunkZ + dz,
+                            distance: Math.max(Math.abs(dx), Math.abs(dz))
+                        });
+                    }
+                }
+            }
+        }
+        
+        this.loadingSystem.totalChunks = chunksToLoad.length;
+        this.loadingSystem.loadedChunks = 0;
+        
+        console.log(`🌍 Starting preload of ${chunksToLoad.length} chunks in ${radius} radius`);
+        this.updateLoadingProgress(5, `Generating ${chunksToLoad.length} chunks...`);
+        
+        // Sort by distance for better loading order
+        chunksToLoad.sort((a, b) => a.distance - b.distance);
+        
+        // Load chunks with progress updates
+        for (let i = 0; i < chunksToLoad.length; i++) {
+            const chunk = chunksToLoad[i];
+            const progress = 5 + (i / chunksToLoad.length) * 85; // 5-90%
+            
+            this.updateLoadingProgress(
+                progress, 
+                `Loading chunk ${i + 1}/${chunksToLoad.length} (${chunk.x}, ${chunk.z})`
+            );
+            
+            // Load the chunk
+            this.loadChunk(chunk.x, chunk.z);
+            this.loadingSystem.loadedChunks++;
+            
+            // Add small delay to prevent blocking and show progress
+            if (i % 3 === 0) { // Every 3 chunks
+                await new Promise(resolve => setTimeout(resolve, 16)); // ~60fps frame
+            }
+        }
+        
+        // Final loading steps
+        this.updateLoadingProgress(90, 'Optimizing world...');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        this.updateLoadingProgress(95, 'Preparing lighting...');
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        this.updateLoadingProgress(100, 'World ready!');
+        await new Promise(resolve => setTimeout(resolve, 500)); // Show completion briefly
+        
+        console.log(`🌍 Preloading complete! Loaded ${this.loadedChunks.size} chunks`);
+        console.log(`📊 Total blocks in scene: ${this.blockMeshes.size}`);
+        
+        // Hide loading screen and start game
+        this.hideLoadingScreen();
     }
     
     showError(message) {
