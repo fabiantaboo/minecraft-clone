@@ -57,11 +57,11 @@ class MinecraftClone {
         this.loadedChunks = new Map();
         this.blockPool = new Map(); // Pool of reusable block meshes
         this.chunkSize = 16;
-        this.renderDistance = 6;
+        this.renderDistance = 8; // Increased render distance for better coverage
         this.lodLevels = {
-            high: 1,    // Full detail chunks (distance 0-1)
-            medium: 3,  // Surface only chunks (distance 2-3) 
-            low: 6      // Outline only chunks (distance 4-6)
+            high: 2,    // Full detail chunks (distance 0-2) - increased for better player surrounding
+            medium: 4,  // Surface only chunks (distance 3-4) 
+            low: 6      // Outline only chunks (distance 5-6)
         };
         this.frustum = new THREE.Frustum();
         this.lastPlayerChunk = { x: null, z: null };
@@ -261,8 +261,12 @@ class MinecraftClone {
         
         console.log(`About to render world...`);
         
-        // Load the spawn chunk properly into the rendering system
-        this.loadChunk(spawnChunkX, spawnChunkZ);
+        // Load spawn chunk and immediate neighbors for better initial experience
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                this.loadChunk(spawnChunkX + dx, spawnChunkZ + dz);
+            }
+        }
         
         console.log(`World rendered. Total blocks in scene: ${this.blockMeshes.size}`);
         console.log(`Loaded chunks: ${this.loadedChunks.size}`);
@@ -622,6 +626,13 @@ class MinecraftClone {
         const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
         const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         
+        // Always ensure the player's current chunk is loaded (emergency fallback)
+        const currentChunkKey = `${playerChunkX}_${playerChunkZ}`;
+        if (!this.loadedChunks.has(currentChunkKey)) {
+            console.log(`Emergency loading player chunk: ${currentChunkKey}`);
+            this.loadChunk(playerChunkX, playerChunkZ);
+        }
+        
         if (this.lastPlayerChunk.x !== playerChunkX || this.lastPlayerChunk.z !== playerChunkZ) {
             this.updateChunks(playerChunkX, playerChunkZ);
             this.lastPlayerChunk.x = playerChunkX;
@@ -644,9 +655,13 @@ class MinecraftClone {
         for (let chunkX = playerChunkX - this.renderDistance; chunkX <= playerChunkX + this.renderDistance; chunkX++) {
             for (let chunkZ = playerChunkZ - this.renderDistance; chunkZ <= playerChunkZ + this.renderDistance; chunkZ++) {
                 const chunkKey = `${chunkX}_${chunkZ}`;
+                const distance = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
                 
-                // Frustum culling - only load visible chunks
-                if (this.isChunkInFrustum(chunkX, chunkZ)) {
+                // Always render closest chunks (distance 0-2) regardless of frustum
+                // For distant chunks, use frustum culling
+                const shouldLoad = distance <= 2 || this.isChunkInFrustum(chunkX, chunkZ);
+                
+                if (shouldLoad) {
                     chunksToKeep.add(chunkKey);
                     
                     if (!this.loadedChunks.has(chunkKey)) {
@@ -667,12 +682,15 @@ class MinecraftClone {
     isChunkInFrustum(chunkX, chunkZ) {
         const chunkCenterX = chunkX * this.chunkSize + this.chunkSize / 2;
         const chunkCenterZ = chunkZ * this.chunkSize + this.chunkSize / 2;
-        const chunkCenterY = this.worldHeight / 2;
         
-        // Create bounding sphere for chunk
+        // Use player Y position instead of world center for better culling
+        const playerY = this.camera.position.y;
+        const chunkCenterY = Math.max(0, Math.min(this.worldHeight, playerY));
+        
+        // Create larger bounding sphere for chunk to be more inclusive
         const chunkSphere = new THREE.Sphere(
             new THREE.Vector3(chunkCenterX, chunkCenterY, chunkCenterZ),
-            this.chunkSize * 0.8 // Sphere radius
+            this.chunkSize * 1.2 // Larger sphere radius for better coverage
         );
         
         return this.frustum.intersectsSphere(chunkSphere);
@@ -717,22 +735,21 @@ class MinecraftClone {
                 solidBlocks++;
                 const [x, y, z] = blockKey.split('_').map(Number);
                 
-                // SUPER AGGRESSIVE LOD for extreme performance
+                // Optimized LOD for better player experience
                 let shouldRender = false;
                 
                 if (distance <= this.lodLevels.high) {
-                    // High detail: render all visible blocks (near chunks)
+                    // High detail: render all visible blocks (immediate player area)
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData);
                 } else if (distance <= this.lodLevels.medium) {
-                    // Medium detail: only every 2nd block + surface only
+                    // Medium detail: surface blocks + some underground for caves
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 y > this.seaLevel - 2 && 
-                                 ((x + z) % 2 === 0);
+                                 (y > this.seaLevel - 5 || this.isTopSurface(x, y, z, chunkData));
                 } else {
-                    // Ultra low detail: only peaks and major features, every 4th block
+                    // Low detail: only surface and prominent features
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 (y > this.seaLevel + 20 || this.isTopSurface(x, y, z, chunkData)) &&
-                                 ((x + z + y) % 4 === 0);
+                                 (y > this.seaLevel + 10 || this.isTopSurface(x, y, z, chunkData)) &&
+                                 ((x + z) % 2 === 0);
                 }
                 
                 if (shouldRender) {
@@ -783,14 +800,16 @@ class MinecraftClone {
             const neighborKey = `${nx}_${ny}_${nz}`;
             let neighborBlock = 'air';
             
+            // Check current chunk first, then neighboring chunks
             if (chunkData && chunkData.has(neighborKey)) {
                 neighborBlock = chunkData.get(neighborKey);
             } else {
+                // For cross-chunk neighbors, always check the world data
                 neighborBlock = this.getBlockAt(nx, ny, nz);
             }
             
-            // Render if any neighbor is air or water (transparent)
-            if (neighborBlock === 'air' || neighborBlock === 'water') {
+            // Render if any neighbor is air, water (transparent), or at chunk boundary
+            if (neighborBlock === 'air' || neighborBlock === 'water' || neighborBlock === null) {
                 return true;
             }
         }
