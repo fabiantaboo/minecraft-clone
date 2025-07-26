@@ -4,8 +4,8 @@ class MinecraftClone {
         this.camera = null;
         this.renderer = null;
         this.world = new Map();
-        this.worldHeight = 64;
-        this.seaLevel = 32;
+        this.worldHeight = 32;
+        this.seaLevel = 16;
         this.worldSeed = Math.floor(Math.random() * 10000);
         
         this.moveSpeed = 0.15;
@@ -44,7 +44,7 @@ class MinecraftClone {
         this.blockMeshes = new Map();
         this.loadedChunks = new Map();
         this.chunkSize = 16;
-        this.renderDistance = 3;
+        this.renderDistance = 1;
         this.lastPlayerChunk = { x: null, z: null };
         
         try {
@@ -349,16 +349,16 @@ class MinecraftClone {
                 // Stelle sicher, dass Terrain immer über dem Meeresspiegel liegt
                 switch (biome) {
                     case 'plains':
-                        baseHeight += heightNoise * 8 + 2; // +2 für Mindesthöhe
+                        baseHeight += heightNoise * 3 + 1; // Flacheres Terrain
                         break;
                     case 'forest':
-                        baseHeight += heightNoise * 12 + 3;
+                        baseHeight += heightNoise * 4 + 1;
                         break;
                     case 'desert':
-                        baseHeight += heightNoise * 6 + 1;
+                        baseHeight += heightNoise * 2 + 1;
                         break;
                     case 'snow':
-                        baseHeight += heightNoise * 20 + 5;
+                        baseHeight += heightNoise * 6 + 2;
                         break;
                 }
                 
@@ -579,6 +579,7 @@ class MinecraftClone {
     }
     
     shouldRenderBlock(x, y, z, chunkData = null) {
+        // Optimized face culling - only render surface blocks
         const neighbors = [
             [x+1, y, z], [x-1, y, z],
             [x, y+1, z], [x, y-1, z],
@@ -586,8 +587,9 @@ class MinecraftClone {
         ];
         
         for (let [nx, ny, nz] of neighbors) {
+            // Always render blocks at world boundaries
             if (ny < 0 || ny >= this.worldHeight) {
-                return ny < 0;
+                return true;
             }
             
             const neighborKey = `${nx}_${ny}_${nz}`;
@@ -599,7 +601,8 @@ class MinecraftClone {
                 neighborBlock = this.getBlockAt(nx, ny, nz);
             }
             
-            if (neighborBlock === 'air') {
+            // Render if any neighbor is air or water (transparent)
+            if (neighborBlock === 'air' || neighborBlock === 'water') {
                 return true;
             }
         }
