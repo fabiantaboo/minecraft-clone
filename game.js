@@ -97,6 +97,32 @@ class MinecraftClone {
             dead_bush: { color: 0x8B4513, texture: null },
             clay: { color: 0x87CEEB, texture: null },
             
+            // Swamp blocks
+            swamp_grass: { color: 0x4F7942, texture: null },
+            lily_pad: { color: 0x008B00, texture: null },
+            swamp_water: { color: 0x617B64, texture: null, transparent: true },
+            
+            // Dark forest blocks
+            dark_oak_wood: { color: 0x3A2F0B, texture: null },
+            dark_oak_leaves: { color: 0x2D5016, texture: null },
+            podzol: { color: 0x8B4513, texture: null },
+            
+            // Mesa/badlands blocks
+            mesa_stone: { color: 0xD2691E, texture: null },
+            red_clay: { color: 0xCC6600, texture: null },
+            hardened_clay: { color: 0x9C5A3C, texture: null },
+            terracotta: { color: 0xD2691E, texture: null },
+            
+            // Ice spikes biome
+            blue_ice: { color: 0x74C0FC, texture: null },
+            ice_spike: { color: 0xE6F3FF, texture: null },
+            
+            // Additional vegetation
+            spruce_wood: { color: 0x8B7355, texture: null },
+            spruce_leaves: { color: 0x355E3B, texture: null },
+            acacia_wood: { color: 0xBA6F2E, texture: null },
+            acacia_leaves: { color: 0x9ACD32, texture: null },
+            
             // Special terrain features
             obsidian: { color: 0x2F2F2F, texture: null },
             gravel: { color: 0x808080, texture: null },
@@ -123,6 +149,18 @@ class MinecraftClone {
         this.chunkSize = 16;
         this.renderDistance = 6; // Reduced for better performance
         this.minRenderDistance = 4; // Never go below this to prevent invisible terrain
+        
+        // Enhanced chunk management
+        this.chunkCache = new Map(); // Cache chunks even when unloaded
+        this.maxCacheSize = 100; // Maximum chunks to keep in cache
+        this.chunkPriority = new Map(); // Priority system for chunk loading
+        this.pendingChunks = new Set(); // Chunks currently being generated
+        
+        // Lighting system
+        this.lightingEnabled = true;
+        this.timeOfDay = 0.5; // 0 = night, 1 = day
+        this.ambientLight = null;
+        this.directionalLight = null;
         
         // Ultra-aggressive LOD for maximum performance
         this.lodLevels = {
@@ -164,6 +202,9 @@ class MinecraftClone {
         this.scene = new THREE.Scene();
         // Dynamic sky color based on time of day
         this.updateSkyColor();
+        
+        // Setup lighting system
+        this.setupLighting();
         
         // Initialize atmospheric systems
         this.initializeAtmosphericSystem();
@@ -243,6 +284,18 @@ class MinecraftClone {
         
         document.addEventListener('keydown', (event) => {
             this.keys[event.code] = true;
+            
+            // Lighting controls
+            if (event.code === 'KeyL') {
+                this.lightingEnabled = !this.lightingEnabled;
+                console.log(`🔆 Lighting: ${this.lightingEnabled ? 'ON' : 'OFF'}`);
+                this.updateLighting();
+            }
+            
+            if (event.code === 'KeyT') {
+                this.cycleDayNight();
+                console.log(`🌅 Time of day: ${(this.timeOfDay * 24).toFixed(1)}:00`);
+            }
             
             if (event.code === 'Escape') {
                 document.exitPointerLock();
@@ -608,27 +661,41 @@ class MinecraftClone {
         
         // Standard biomes based on temperature and humidity
         if (temperature < -0.4) {
-            return humidity > 0.0 ? 'snowy_taiga' : 'tundra';
+            if (humidity > 0.2) return 'snowy_taiga';
+            if (humidity > -0.1) return 'tundra';
+            return 'ice_spikes';
         }
         
         if (temperature < -0.1) {
-            if (humidity > 0.3) return 'taiga';
-            if (humidity > -0.2) return 'snowy_plains';
+            if (humidity > 0.4) return 'dark_forest';
+            if (humidity > 0.2) return 'taiga';
+            if (humidity > -0.1) return 'snowy_plains';
             return 'cold_desert';
         }
         
         if (temperature < 0.3) {
-            if (humidity > 0.4) return 'forest';
-            if (humidity > 0.1) return 'plains';
-            if (humidity > -0.3) return 'savanna';
-            return 'desert';
+            if (humidity > 0.5) return 'dark_forest';
+            if (humidity > 0.3) return 'forest';
+            if (humidity > 0.0) return 'plains';
+            if (humidity > -0.2) return 'savanna';
+            if (humidity > -0.4) return 'desert';
+            return 'mesa';
         }
         
         // Hot biomes
-        if (humidity > 0.3) return 'jungle';
-        if (humidity > 0.0) return 'savanna';
-        if (humidity > -0.4) return 'desert';
-        return 'hot_desert';
+        if (temperature > 0.4) {
+            if (humidity > 0.4) return 'jungle';
+            if (humidity > 0.1) return 'savanna';
+            if (humidity > -0.2) return 'desert';
+            return 'hot_desert';
+        }
+        
+        // Moderate temperature biomes
+        if (humidity > 0.4) return 'swamp';
+        if (humidity > 0.2) return 'forest';
+        if (humidity > 0.0) return 'plains';
+        if (humidity > -0.3) return 'savanna';
+        return 'desert';
     }
     
     getBiomeTransition(x, z, radius = 2) {
@@ -789,6 +856,9 @@ class MinecraftClone {
             case 'canyon':
                 return Math.random() < 0.2 ? 'red_sand' : 'sandstone';
                 
+            case 'mesa':
+                return Math.random() < 0.3 ? 'terracotta' : 'hardened_clay';
+                
             case 'snow_mountain':
                 if (y > 45) return 'snow_block';
                 if (y > 35) return 'snow';
@@ -801,6 +871,15 @@ class MinecraftClone {
                 
             case 'mountain_forest':
                 return y > 35 ? 'dark_grass' : 'grass';
+                
+            case 'dark_forest':
+                return microNoise > 0.4 ? 'podzol' : 'dark_grass';
+                
+            case 'swamp':
+                return microNoise > 0.5 ? 'swamp_grass' : 'clay';
+                
+            case 'ice_spikes':
+                return Math.random() < 0.2 ? 'blue_ice' : 'snow_block';
                 
             case 'tundra':
             case 'cold_desert':
@@ -864,54 +943,174 @@ class MinecraftClone {
         return chunk;
     }
     
-    // Simple terrain generation methods inspired by reference implementation
+    // Enhanced terrain generation with sophisticated features
     getSimpleTerrainHeight(worldX, worldZ) {
-        // Base terrain using simple noise layers
-        const baseHeight = this.seaLevel + 
-                          this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 4, 0.5, 1) * 15 +
-                          this.octaveNoise(worldX * 0.05, 0, worldZ * 0.05, 2, 0.3, 1) * 5;
+        // Get biome factors for terrain modification
+        const biome = this.getBiome(worldX, worldZ);
         
-        return Math.floor(Math.max(this.seaLevel, Math.min(this.worldHeight - 10, baseHeight)));
+        // Multi-scale terrain generation
+        const continentalScale = this.octaveNoise(worldX * 0.001, 0, worldZ * 0.001, 6, 0.6, 1);
+        const mountainScale = this.octaveNoise(worldX * 0.005, 0, worldZ * 0.005, 4, 0.5, 1);
+        const hillScale = this.octaveNoise(worldX * 0.02, 0, worldZ * 0.02, 3, 0.4, 1);
+        const detailScale = this.octaveNoise(worldX * 0.1, 0, worldZ * 0.1, 2, 0.3, 1);
+        
+        // Base continental height
+        let height = this.seaLevel + continentalScale * 30;
+        
+        // Add mountain features
+        if (continentalScale > 0.2) {
+            height += Math.pow(Math.max(0, continentalScale - 0.2), 2) * 40;
+        }
+        
+        // Add hills and valleys
+        height += hillScale * 8;
+        
+        // Add surface details
+        height += detailScale * 3;
+        
+        // Biome-specific height modifications
+        switch (biome) {
+            case 'mountain':
+            case 'snow_mountain':
+                height += Math.abs(mountainScale) * 25;
+                break;
+            case 'canyon':
+            case 'desert_canyon':
+                // Create canyon valleys
+                const canyonDepth = Math.abs(this.octaveNoise(worldX * 0.03, 0, worldZ * 0.03, 2, 0.5, 1));
+                if (canyonDepth > 0.6) {
+                    height -= (canyonDepth - 0.6) * 30;
+                }
+                break;
+            case 'ocean':
+            case 'frozen_ocean':
+                height = Math.min(height, this.seaLevel - 5);
+                break;
+            case 'mesa':
+                // Create mesa plateaus
+                const mesaHeight = Math.floor(height / 10) * 10; // Stepped terrain
+                height = mesaHeight + Math.abs(detailScale) * 5;
+                break;
+        }
+        
+        return Math.floor(Math.max(0, Math.min(this.worldHeight - 10, height)));
     }
     
     getSimpleBiome(worldX, worldZ) {
-        const temperature = this.octaveNoise(worldX * 0.005, 0, worldZ * 0.005, 3, 0.5, 1);
-        const humidity = this.octaveNoise(worldX * 0.005, 100, worldZ * 0.005, 3, 0.5, 1);
-        
-        if (temperature < -0.3) return 'tundra';
-        if (temperature > 0.4 && humidity < -0.2) return 'desert';
-        if (humidity > 0.3) return 'jungle';
-        return 'plains';
+        // Use the advanced biome system instead of simple one
+        return this.getBiome(worldX, worldZ);
     }
     
     generateSimpleTerrainColumn(chunk, worldX, worldZ, height, biome) {
-        for (let y = 0; y <= height; y++) {
+        // Check for rivers
+        const isRiver = this.isRiver(worldX, worldZ);
+        const isLake = this.isLake(worldX, worldZ);
+        
+        // Modify height for water features
+        if (isRiver) {
+            height = Math.min(height, this.seaLevel);
+        } else if (isLake) {
+            height = Math.min(height, this.seaLevel - 2);
+        }
+        
+        for (let y = 0; y <= Math.max(height, this.seaLevel + 1); y++) {
             const blockKey = `${worldX}_${y}_${worldZ}`;
             let blockType;
             
-            if (y === height) {
-                // Surface block based on biome
-                switch (biome) {
-                    case 'desert': blockType = 'sand'; break;
-                    case 'tundra': blockType = 'snow'; break;
-                    case 'jungle': blockType = 'jungle_grass'; break;
-                    default: blockType = 'grass';
+            // Check for caves first (only in solid terrain)
+            if (y <= height && y > 5) {
+                const caveResult = this.generateAdvancedCaveSystem(worldX, y, worldZ, biome);
+                if (caveResult.isAir) {
+                    // This is a cave - set to air or water if below sea level
+                    if (y <= this.seaLevel) {
+                        blockType = 'water';
+                    } else {
+                        // Air cave
+                        chunk.set(blockKey, 'air');
+                        continue; // Skip rest of terrain generation for this block
+                    }
                 }
-            } else if (y >= height - 3) {
-                // Subsurface layer
-                blockType = biome === 'desert' ? 'sandstone' : 'dirt';
-            } else {
-                // Deep stone
-                blockType = 'stone';
             }
             
-            chunk.set(blockKey, blockType);
+            if (y <= height && !blockType) {
+                if (y === height && !isRiver && !isLake) {
+                    // Surface block based on biome
+                    blockType = this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
+                } else if (y >= height - 3) {
+                    // Subsurface layer
+                    blockType = this.getSoilType(biome, 0.5);
+                } else if (y >= height - 8) {
+                    // Upper rock layer
+                    blockType = this.getRockType(biome, y, height);
+                } else {
+                    // Deep stone with occasional ores
+                    blockType = this.getDeepRockWithOres(worldX, y, worldZ, biome);
+                }
+            } else if (y <= this.seaLevel && !blockType) {
+                // Water layer
+                if (biome === 'swamp') {
+                    blockType = 'swamp_water';
+                } else if (biome === 'frozen_ocean' || biome === 'ice_spikes') {
+                    blockType = y === this.seaLevel ? 'ice' : 'water';
+                } else {
+                    blockType = 'water';
+                }
+            }
+            
+            if (blockType) {
+                chunk.set(blockKey, blockType);
+            }
         }
         
-        // Add simple vegetation
-        if (Math.random() < 0.02 && biome !== 'desert') {
-            this.addSimpleTree(chunk, worldX, worldZ, height, biome);
+        // Add vegetation based on advanced biome system
+        if (height > this.seaLevel && !isRiver && !isLake) {
+            this.generateVegetationForBiome(chunk, worldX, height, worldZ, biome);
         }
+    }
+    
+    isRiver(worldX, worldZ) {
+        // Generate rivers using ridged noise
+        const riverNoise = Math.abs(this.octaveNoise(worldX * 0.002, 0, worldZ * 0.008, 3, 0.5, 1));
+        const riverMask = this.octaveNoise(worldX * 0.001, 100, worldZ * 0.001, 2, 0.6, 1);
+        
+        // Rivers appear where noise is close to zero and mask allows them
+        return riverNoise < 0.1 && riverMask > 0.2;
+    }
+    
+    isLake(worldX, worldZ) {
+        // Generate occasional lakes
+        const lakeNoise = this.octaveNoise(worldX * 0.003, 200, worldZ * 0.003, 3, 0.4, 1);
+        const lakeDensity = this.octaveNoise(worldX * 0.001, 300, worldZ * 0.001, 2, 0.3, 1);
+        
+        return lakeNoise > 0.7 && lakeDensity > 0.6;
+    }
+    
+    getDeepRockWithOres(worldX, y, worldZ, biome) {
+        // Generate ores at appropriate depths
+        const oreNoise = this.octaveNoise(worldX * 0.1, y * 0.1, worldZ * 0.1, 3, 0.4, 1);
+        
+        // Diamond - very deep and rare
+        if (y < 15 && oreNoise > 0.85 && Math.random() < 0.001) {
+            return 'diamond';
+        }
+        
+        // Gold - deep and rare
+        if (y < 25 && oreNoise > 0.75 && Math.random() < 0.003) {
+            return 'gold';
+        }
+        
+        // Iron - medium depth, more common
+        if (y < 45 && oreNoise > 0.6 && Math.random() < 0.008) {
+            return 'iron';
+        }
+        
+        // Coal - shallow to medium depth, common
+        if (y < 60 && oreNoise > 0.5 && Math.random() < 0.015) {
+            return 'coal';
+        }
+        
+        // Return appropriate rock type for biome
+        return this.getRockType(biome, y, y + 10) || 'stone';
     }
     
     addSimpleTree(chunk, worldX, worldZ, groundHeight, biome) {
@@ -3441,6 +3640,14 @@ class MinecraftClone {
                 }
                 break;
                 
+            case 'dark_forest':
+                if (Math.random() < 0.20) { // Denser trees in dark forest
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'dark_oak');
+                } else if (Math.random() < 0.03) {
+                    this.generateMushroom(chunk, x, terrainHeight, z);
+                }
+                break;
+                
             case 'jungle':
                 if (Math.random() < 0.15) {
                     this.generateForestTree(chunk, x, terrainHeight, z, 'jungle');
@@ -3456,6 +3663,30 @@ class MinecraftClone {
                 }
                 break;
                 
+            case 'swamp':
+                if (Math.random() < 0.08) {
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'oak');
+                } else if (Math.random() < 0.05) {
+                    this.generateLilyPad(chunk, x, terrainHeight, z);
+                } else if (Math.random() < 0.03) {
+                    this.generateMushroom(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'ice_spikes':
+                if (Math.random() < 0.002) {
+                    this.generateIceSpike(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'mesa':
+                if (Math.random() < 0.001) {
+                    this.generateCactus(chunk, x, terrainHeight, z);
+                } else if (Math.random() < 0.005) {
+                    this.generateDeadBush(chunk, x, terrainHeight, z);
+                }
+                break;
+                
             case 'desert':
             case 'hot_desert':
                 if (Math.random() < 0.003) {
@@ -3467,7 +3698,7 @@ class MinecraftClone {
                 
             case 'savanna':
                 if (Math.random() < 0.02) {
-                    this.generateForestTree(chunk, x, terrainHeight, z, 'oak'); // Acacia-ähnliche Eichen
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'acacia');
                 } else if (Math.random() < 0.15) {
                     this.generateSavannaGrass(chunk, x, terrainHeight, z);
                 }
@@ -3510,34 +3741,35 @@ class MinecraftClone {
     }
     
     generateForestTree(chunk, x, y, z, treeType = 'oak') {
-        // 🌳 ULTIMATIVES BAUM-GENERIERUNGSSYSTEM - Mit echten Stämmen und Ästen!
-        console.log(`🌳 Generating ULTIMATE ${treeType} tree at (${x}, ${y}, ${z})`);
+        // 🌳 ROBUST TREE GENERATION SYSTEM - GUARANTEED TO WORK!
+        console.log(`🌳 Generating ${treeType} tree at (${x}, ${y}, ${z})`);
         
-        // Bestimme Baum-Parameter basierend auf Art
+        // Get tree parameters
         const treeParams = this.getTreeParameters(treeType);
         
-        // Prüfe ob genug Platz für Baum vorhanden
+        // Check if we can place tree here
         if (!this.hasSpaceForTree(chunk, x, y, z, treeParams)) {
-            console.log(`🌳 Not enough space for tree at (${x}, ${y}, ${z})`);
+            console.log(`🌳 Not enough space for tree at (${x}, ${y}, ${z}) - trying simple tree instead`);
+            // Fallback to simple tree if complex tree can't be placed
+            this.generateSimpleReliableTree(chunk, x, y, z, treeType);
             return;
         }
         
-        // PHASE 1: WURZELSYSTEM generieren
-        this.generateRootSystem(chunk, x, y, z, treeParams);
-        
-        // PHASE 2: HAUPTSTAMM generieren (mit natürlicher Krümmung)
-        const trunkPath = this.generateRealisticTrunk(chunk, x, y, z, treeParams);
-        
-        // PHASE 3: ÄST-SYSTEM generieren (realistisch verzweigt)
-        const branches = this.generateRealisticBranches(chunk, trunkPath, treeParams);
-        
-        // PHASE 4: BLÄTTER-SYSTEM generieren (natürliche Anordnung)
-        this.generateRealisticFoliage(chunk, trunkPath, branches, treeParams);
-        
-        // PHASE 5: FRÜCHTE/ZAPFEN hinzufügen (je nach Baumart)
-        this.generateTreeFruit(chunk, branches, treeParams);
-        
-        console.log(`🌳 ✅ Generated PERFECT ${treeType} tree with ${trunkPath.length} trunk segments and ${branches.length} branches`);
+        try {
+            // PHASE 1: Generate trunk (most important!)
+            const trunkHeight = this.generateReliableTrunk(chunk, x, y, z, treeParams);
+            
+            // PHASE 2: Generate branches
+            const branches = this.generateTreeBranches(chunk, x, y, z, trunkHeight, treeParams);
+            
+            // PHASE 3: Generate foliage
+            this.generateTreeFoliage(chunk, x, y, z, trunkHeight, branches, treeParams);
+            
+            console.log(`🌳 ✅ Successfully generated ${treeType} tree with trunk height ${trunkHeight}`);
+        } catch (error) {
+            console.error(`🌳 ❌ Error generating tree: ${error.message}, falling back to simple tree`);
+            this.generateSimpleReliableTree(chunk, x, y, z, treeType);
+        }
     }
     
     getTreeParameters(treeType) {
@@ -3561,8 +3793,8 @@ class MinecraftClone {
                 shape: 'round'
             },
             'spruce': {
-                woodType: 'wood',
-                leafType: 'leaves',
+                woodType: 'spruce_wood',
+                leafType: 'spruce_leaves',
                 minHeight: 8,
                 maxHeight: 18,
                 trunkRadius: 0.4,
@@ -3610,6 +3842,40 @@ class MinecraftClone {
                 naturalCurve: 0.3,
                 taperRate: 0.92,
                 shape: 'irregular'
+            },
+            'dark_oak': {
+                woodType: 'dark_oak_wood',
+                leafType: 'dark_oak_leaves',
+                minHeight: 6,
+                maxHeight: 14,
+                trunkRadius: 0.4,
+                branchDensity: 0.8,
+                branchLength: 4,
+                branchAngle: 50,
+                leafDensity: 0.9,
+                leafRadius: 3,
+                rootDepth: 2,
+                rootSpread: 3,
+                naturalCurve: 0.2,
+                taperRate: 0.9,
+                shape: 'dense'
+            },
+            'acacia': {
+                woodType: 'acacia_wood',
+                leafType: 'acacia_leaves',
+                minHeight: 4,
+                maxHeight: 8,
+                trunkRadius: 0.3,
+                branchDensity: 0.6,
+                branchLength: 5,
+                branchAngle: 80,
+                leafDensity: 0.6,
+                leafRadius: 2,
+                rootDepth: 2,
+                rootSpread: 4,
+                naturalCurve: 0.4,
+                taperRate: 0.85,
+                shape: 'flat'
             }
         };
         
@@ -3623,13 +3889,13 @@ class MinecraftClone {
     }
     
     hasSpaceForTree(chunk, x, y, z, params) {
-        // 🌳 PRÜFT OB GENUG PLATZ FÜR BAUM VORHANDEN IST
-        const checkRadius = Math.ceil(params.leafRadius);
-        const checkHeight = params.height + 2;
+        // 🌳 PRÜFT OB GENUG PLATZ FÜR BAUM VORHANDEN IST - SIMPLIFIED AND MORE PERMISSIVE
+        const checkRadius = Math.min(Math.ceil(params.leafRadius), 2); // Limit check radius
+        const checkHeight = Math.min(params.height + 2, 15); // Limit check height
         
-        // Prüfe Bereich um Baum
-        for (let dx = -checkRadius; dx <= checkRadius; dx++) {
-            for (let dz = -checkRadius; dz <= checkRadius; dz++) {
+        // Only check for existing trees and large structures, not terrain
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
                 for (let dy = 0; dy < checkHeight; dy++) {
                     const checkX = x + dx;
                     const checkY = y + dy;
@@ -3637,16 +3903,130 @@ class MinecraftClone {
                     const checkKey = `${checkX}_${checkY}_${checkZ}`;
                     const existingBlock = chunk.get(checkKey);
                     
-                    // Bereich darf nicht bereits von anderen Strukturen belegt sein
-                    if (existingBlock && existingBlock !== 'air' && 
-                        !existingBlock.includes('grass') && existingBlock !== 'dirt') {
+                    // Only prevent placement if there's already wood/leaves (another tree)
+                    if (existingBlock && (existingBlock.includes('wood') || existingBlock.includes('leaves'))) {
                         return false;
                     }
                 }
             }
         }
         
+        // Check if ground block is suitable for tree growth
+        const groundKey = `${x}_${y}_${z}`;
+        const groundBlock = chunk.get(groundKey);
+        if (!groundBlock || (!groundBlock.includes('grass') && groundBlock !== 'dirt')) {
+            return false;
+        }
+        
         return true;
+    }
+    
+    generateSimpleReliableTree(chunk, x, y, z, treeType) {
+        // 🌳 SIMPLE BUT RELIABLE TREE GENERATION - ALWAYS WORKS!
+        const treeParams = this.getTreeParameters(treeType);
+        const height = 4 + Math.floor(Math.random() * 4); // 4-7 blocks tall
+        
+        // Generate trunk
+        for (let dy = 1; dy <= height; dy++) {
+            const trunkKey = `${x}_${y + dy}_${z}`;
+            chunk.set(trunkKey, treeParams.woodType);
+        }
+        
+        // Generate simple leaf crown
+        const leafY = y + height;
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                for (let dy = 0; dy <= 2; dy++) {
+                    const distance = Math.abs(dx) + Math.abs(dz) + dy;
+                    if (distance <= 3 && Math.random() < 0.8) {
+                        const leafKey = `${x + dx}_${leafY + dy}_${z + dz}`;
+                        // Don't overwrite trunk
+                        if (!(dx === 0 && dz === 0 && dy === 0)) {
+                            chunk.set(leafKey, treeParams.leafType);
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`🌳 ✅ Generated simple reliable ${treeType} tree`);
+    }
+    
+    generateReliableTrunk(chunk, x, y, z, params) {
+        // 🌳 GENERATE RELIABLE TRUNK - GUARANTEED TO WORK
+        const height = params.height || (5 + Math.floor(Math.random() * 5));
+        
+        // Clear the ground block first
+        const groundKey = `${x}_${y}_${z}`;
+        chunk.set(groundKey, 'dirt');
+        
+        // Generate straight trunk
+        for (let dy = 1; dy <= height; dy++) {
+            const trunkKey = `${x}_${y + dy}_${z}`;
+            chunk.set(trunkKey, params.woodType);
+        }
+        
+        return height;
+    }
+    
+    generateTreeBranches(chunk, x, y, z, trunkHeight, params) {
+        // 🌿 GENERATE SIMPLE BUT EFFECTIVE BRANCHES
+        const branches = [];
+        const branchStartHeight = Math.floor(trunkHeight * 0.6);
+        
+        // Generate 2-4 main branches
+        const numBranches = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < numBranches; i++) {
+            const branchY = y + branchStartHeight + Math.floor(Math.random() * (trunkHeight - branchStartHeight));
+            const angle = (i / numBranches) * 2 * Math.PI + Math.random() * 0.5;
+            const length = 2 + Math.floor(Math.random() * 3);
+            
+            for (let j = 1; j <= length; j++) {
+                const branchX = x + Math.round(Math.cos(angle) * j);
+                const branchZ = z + Math.round(Math.sin(angle) * j);
+                const branchKey = `${branchX}_${branchY}_${branchZ}`;
+                chunk.set(branchKey, params.woodType);
+                branches.push({ x: branchX, y: branchY, z: branchZ });
+            }
+        }
+        
+        return branches;
+    }
+    
+    generateTreeFoliage(chunk, x, y, z, trunkHeight, branches, params) {
+        // 🍃 GENERATE RELIABLE FOLIAGE
+        const crownY = y + trunkHeight;
+        const leafRadius = params.leafRadius || 2;
+        
+        // Main crown around trunk top
+        for (let dx = -leafRadius; dx <= leafRadius; dx++) {
+            for (let dz = -leafRadius; dz <= leafRadius; dz++) {
+                for (let dy = -1; dy <= 2; dy++) {
+                    const distance = Math.sqrt(dx * dx + dz * dz + dy * dy);
+                    if (distance <= leafRadius && Math.random() < 0.7) {
+                        const leafKey = `${x + dx}_${crownY + dy}_${z + dz}`;
+                        // Don't overwrite trunk
+                        if (!(dx === 0 && dz === 0 && dy <= 0)) {
+                            chunk.set(leafKey, params.leafType);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Add leaves around branches
+        for (const branch of branches) {
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (Math.random() < 0.6) {
+                            const leafKey = `${branch.x + dx}_${branch.y + dy}_${branch.z + dz}`;
+                            chunk.set(leafKey, params.leafType);
+                        }
+                    }
+                }
+            }
+        }
     }
     
     generateRootSystem(chunk, x, y, z, params) {
@@ -4150,12 +4530,23 @@ class MinecraftClone {
         }
     }
     
+    generateLilyPad(chunk, x, y, z) {
+        // Generate lily pad on water surface
+        const waterKey = `${x}_${y}_${z}`;
+        const waterBlock = chunk.get(waterKey);
+        
+        // Only place lily pads on water or swamp water
+        if (waterBlock === 'water' || waterBlock === 'swamp_water') {
+            chunk.set(`${x}_${y + 1}_${z}`, 'lily_pad');
+        }
+    }
+    
     generateIceSpike(chunk, x, y, z) {
         const spikeHeight = 3 + Math.floor(Math.random() * 5);
         
         for (let i = 0; i < spikeHeight; i++) {
             if (y + i < this.worldHeight) {
-                chunk.set(`${x}_${y + i}_${z}`, 'packed_ice');
+                chunk.set(`${x}_${y + i}_${z}`, 'ice_spike');
             }
         }
     }
@@ -5118,17 +5509,36 @@ class MinecraftClone {
         const chunkKey = `${chunkX}_${chunkZ}`;
         const chunkBlocks = new Set();
         
+        if (this.loadedChunks.has(chunkKey)) {
+            return; // Already loaded
+        }
+        
+        if (this.pendingChunks.has(chunkKey)) {
+            return; // Already generating
+        }
+        
+        this.pendingChunks.add(chunkKey);
+        
         // Calculate distance from player for LOD
         const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
         const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
         const distance = Math.max(Math.abs(chunkX - playerChunkX), Math.abs(chunkZ - playerChunkZ));
         
         let chunkData;
-        if (this.world.has(chunkKey)) {
+        
+        // Check cache first
+        if (this.chunkCache.has(chunkKey)) {
+            chunkData = this.chunkCache.get(chunkKey);
+            console.log(`📦 Cache hit for chunk ${chunkKey}`);
+        } else if (this.world.has(chunkKey)) {
             chunkData = this.world.get(chunkKey);
         } else {
+            // Generate new chunk
             chunkData = this.generateChunk(chunkX, chunkZ);
             this.world.set(chunkKey, chunkData);
+            
+            // Add to cache
+            this.addToCache(chunkKey, chunkData);
         }
         
         // Group blocks by type for instanced rendering
@@ -5182,6 +5592,7 @@ class MinecraftClone {
         
         console.log(`✅ Chunk ${chunkKey} (dist: ${distance}): ${solidBlocks} solid, ${renderedBlocks} rendered`);
         this.loadedChunks.set(chunkKey, chunkBlocks);
+        this.pendingChunks.delete(chunkKey); // Remove from pending
         
         // 🔍 CRITICAL DEBUG: Log instance counts after chunk loading
         let totalInstances = 0;
@@ -5194,15 +5605,53 @@ class MinecraftClone {
         console.log(`🎯 Total instances rendered: ${totalInstances}`);
     }
     
+    addToCache(chunkKey, chunkData) {
+        // Add chunk to cache with LRU eviction
+        if (this.chunkCache.size >= this.maxCacheSize) {
+            // Remove oldest entry (LRU)
+            const oldestKey = this.chunkCache.keys().next().value;
+            this.chunkCache.delete(oldestKey);
+        }
+        
+        this.chunkCache.set(chunkKey, chunkData);
+    }
+    
+    preloadChunksInDirection(playerChunkX, playerChunkZ, directionX, directionZ) {
+        // Predictive loading in movement direction
+        const preloadDistance = 2;
+        
+        for (let i = 1; i <= preloadDistance; i++) {
+            const preloadChunkX = playerChunkX + (directionX * i);
+            const preloadChunkZ = playerChunkZ + (directionZ * i);
+            const preloadKey = `${preloadChunkX}_${preloadChunkZ}`;
+            
+            if (!this.loadedChunks.has(preloadKey) && !this.pendingChunks.has(preloadKey)) {
+                // Set higher priority for chunks in movement direction
+                this.chunkPriority.set(preloadKey, Date.now() + (i * 1000));
+                
+                // Generate chunk data in advance (but don't render yet)
+                if (!this.world.has(preloadKey) && !this.chunkCache.has(preloadKey)) {
+                    const chunkData = this.generateChunk(preloadChunkX, preloadChunkZ);
+                    this.addToCache(preloadKey, chunkData);
+                    console.log(`📡 Pre-generated chunk ${preloadKey} in movement direction`);
+                }
+            }
+        }
+    }
+    
     renderInstancedBlocks(blocksToRender) {
+        // Advanced mesh optimization with face culling
         for (const [blockType, positions] of blocksToRender) {
             const instanceData = this.instanceData.get(blockType);
             const instancedMesh = this.instancedMeshes.get(blockType);
             
             if (!instanceData || !instancedMesh) continue;
             
-            // Add new positions to instance data
-            for (const pos of positions) {
+            // Perform advanced face culling to reduce instances
+            const culledPositions = this.performAdvancedFaceCulling(blockType, positions);
+            
+            // Add culled positions to instance data
+            for (const pos of culledPositions) {
                 if (instanceData.count < this.maxInstancesPerType) {
                     instanceData.positions.push(pos);
                     
@@ -5221,6 +5670,72 @@ class MinecraftClone {
         }
     }
     
+    performAdvancedFaceCulling(blockType, positions) {
+        // Advanced face culling - only render blocks with exposed faces
+        const positionsMap = new Map();
+        const culledPositions = [];
+        
+        // Build a map for fast lookup
+        for (const pos of positions) {
+            positionsMap.set(`${pos.x}_${pos.y}_${pos.z}`, pos);
+        }
+        
+        for (const pos of positions) {
+            const { x, y, z } = pos;
+            
+            // Check if any face is exposed to air or transparent blocks
+            const neighbors = [
+                [x+1, y, z], [x-1, y, z],
+                [x, y+1, z], [x, y-1, z],
+                [x, y, z+1], [x, y, z-1]
+            ];
+            
+            let hasExposedFace = false;
+            for (const [nx, ny, nz] of neighbors) {
+                const neighborKey = `${nx}_${ny}_${nz}`;
+                
+                // If neighbor is not in our current batch, check the world
+                if (!positionsMap.has(neighborKey)) {
+                    if (!this.isBlockSolid(nx, ny, nz)) {
+                        hasExposedFace = true;
+                        break;
+                    }
+                }
+            }
+            
+            // Only render blocks with at least one exposed face
+            if (hasExposedFace) {
+                culledPositions.push(pos);
+            }
+        }
+        
+        console.log(`🔧 Face culling: ${positions.length} -> ${culledPositions.length} blocks (${Math.round((1 - culledPositions.length/positions.length) * 100)}% culled)`);
+        return culledPositions;
+    }
+    
+    isBlockSolid(x, y, z) {
+        // Check if a block position is solid (not air or transparent)
+        if (y < 0 || y >= this.worldHeight) return false;
+        
+        const chunkX = Math.floor(x / this.chunkSize);
+        const chunkZ = Math.floor(z / this.chunkSize);
+        const chunkKey = `${chunkX}_${chunkZ}`;
+        
+        if (this.world.has(chunkKey)) {
+            const chunk = this.world.get(chunkKey);
+            const blockKey = `${x}_${y}_${z}`;
+            const blockType = chunk.get(blockKey);
+            
+            // Consider transparent blocks as non-solid for culling purposes
+            if (!blockType || blockType === 'air') return false;
+            if (this.blockTypes[blockType]?.transparent) return false;
+            
+            return true;
+        }
+        
+        return false;
+    }
+    
     isTopSurface(x, y, z, chunkData) {
         const aboveKey = `${x}_${y + 1}_${z}`;
         return !chunkData.has(aboveKey) || chunkData.get(aboveKey) === 'air';
@@ -5229,6 +5744,12 @@ class MinecraftClone {
     unloadChunk(chunkKey) {
         const chunkBlocks = this.loadedChunks.get(chunkKey);
         if (chunkBlocks) {
+            // Keep chunk data in cache for potential reloading
+            if (this.world.has(chunkKey)) {
+                const chunkData = this.world.get(chunkKey);
+                this.addToCache(chunkKey, chunkData);
+            }
+            
             // Rebuild all instanced meshes without the unloaded blocks
             this.rebuildInstancedMeshes(chunkBlocks);
             
@@ -5242,7 +5763,88 @@ class MinecraftClone {
             });
             
             this.loadedChunks.delete(chunkKey);
+            console.log(`📤 Unloaded chunk ${chunkKey} (cached for reuse)`);
         }
+    }
+    
+    setupLighting() {
+        // Remove existing lights
+        if (this.ambientLight) this.scene.remove(this.ambientLight);
+        if (this.directionalLight) this.scene.remove(this.directionalLight);
+        
+        // Ambient light for base illumination
+        this.ambientLight = new THREE.AmbientLight(0x404040, 0.4); // Soft white light
+        this.scene.add(this.ambientLight);
+        
+        // Directional light (sun)
+        this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        this.directionalLight.position.set(100, 200, 50);
+        this.directionalLight.castShadow = false; // Disabled for performance
+        this.scene.add(this.directionalLight);
+        
+        // Update lighting based on time of day
+        this.updateLighting();
+        
+        console.log('🔆 Lighting system initialized');
+    }
+    
+    updateLighting() {
+        if (!this.lightingEnabled) return;
+        
+        // Calculate lighting based on time of day
+        const sunIntensity = Math.max(0.2, Math.sin(this.timeOfDay * Math.PI));
+        const ambientIntensity = Math.max(0.1, sunIntensity * 0.5);
+        
+        // Update ambient light
+        if (this.ambientLight) {
+            this.ambientLight.intensity = ambientIntensity;
+            
+            // Tint based on time of day
+            if (this.timeOfDay < 0.25 || this.timeOfDay > 0.75) {
+                // Night - blue tint
+                this.ambientLight.color.setHex(0x2040a0);
+            } else if (this.timeOfDay < 0.3 || this.timeOfDay > 0.7) {
+                // Dawn/dusk - orange tint
+                this.ambientLight.color.setHex(0xa06040);
+            } else {
+                // Day - neutral white
+                this.ambientLight.color.setHex(0x404040);
+            }
+        }
+        
+        // Update directional light (sun)
+        if (this.directionalLight) {
+            this.directionalLight.intensity = sunIntensity;
+            
+            // Position sun based on time of day
+            const angle = this.timeOfDay * Math.PI * 2;
+            this.directionalLight.position.set(
+                Math.cos(angle) * 100,
+                Math.sin(angle) * 100 + 50,
+                50
+            );
+            
+            // Color based on time of day
+            if (this.timeOfDay < 0.25 || this.timeOfDay > 0.75) {
+                // Night - very dim blue
+                this.directionalLight.color.setHex(0x1a1a2e);
+            } else if (this.timeOfDay < 0.3 || this.timeOfDay > 0.7) {
+                // Dawn/dusk - warm orange
+                this.directionalLight.color.setHex(0xffa366);
+            } else {
+                // Day - bright white
+                this.directionalLight.color.setHex(0xffffff);
+            }
+        }
+    }
+    
+    cycleDayNight() {
+        // Cycle through day/night for demo purposes
+        this.timeOfDay += 0.01;
+        if (this.timeOfDay > 1) this.timeOfDay = 0;
+        
+        this.updateLighting();
+        this.updateSkyColor();
     }
     
     rebuildInstancedMeshes(blocksToRemove) {
