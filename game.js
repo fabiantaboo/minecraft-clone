@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 class MinecraftClone {
     constructor() {
         this.scene = null;
@@ -217,7 +219,7 @@ class MinecraftClone {
                         leafY < this.worldHeight) {
                         
                         if (Math.abs(dx) + Math.abs(dz) <= 2 && Math.random() > 0.3) {
-                            if (this.world[leafX][leafZ][leafY] === 'air') {
+                            if (this.world[leafX] && this.world[leafX][leafZ] && this.world[leafX][leafZ][leafY] === 'air') {
                                 this.world[leafX][leafZ][leafY] = 'leaves';
                             }
                         }
@@ -568,20 +570,6 @@ class MinecraftClone {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    if (typeof THREE === 'undefined') {
-        console.error('Three.js not loaded');
-        document.body.innerHTML = `
-            <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                        background: red; color: white; padding: 20px; border-radius: 10px; 
-                        font-family: Arial, sans-serif; text-align: center;">
-                <h3>Error: Three.js not loaded</h3>
-                <p>Please check your internet connection and refresh the page.</p>
-                <p>If the problem persists, try a different browser or enable JavaScript.</p>
-            </div>
-        `;
-        return;
-    }
-    
     try {
         new MinecraftClone();
     } catch (error) {
