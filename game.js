@@ -689,6 +689,11 @@ class MinecraftClone {
         const newY = this.camera.position.y + this.velocity.y;
         const newZ = this.camera.position.z + this.velocity.z;
         
+        // Debug movement
+        if (Math.abs(this.velocity.x) > 0.001 || Math.abs(this.velocity.y) > 0.001 || Math.abs(this.velocity.z) > 0.001) {
+            console.log(`Movement: Velocity(${this.velocity.x.toFixed(3)}, ${this.velocity.y.toFixed(3)}, ${this.velocity.z.toFixed(3)}) Position(${this.camera.position.x.toFixed(1)}, ${this.camera.position.y.toFixed(1)}, ${this.camera.position.z.toFixed(1)})`);
+        }
+        
         let tempX = this.camera.position.x;
         let tempY = this.camera.position.y;
         let tempZ = this.camera.position.z;
@@ -859,6 +864,7 @@ class MinecraftClone {
     animate() {
         requestAnimationFrame(() => this.animate());
         this.update();
+        this.renderWorld();
         this.renderer.render(this.scene, this.camera);
     }
 }
