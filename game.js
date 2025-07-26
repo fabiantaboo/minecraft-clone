@@ -6714,16 +6714,43 @@ class MinecraftClone {
             
             let placeX = x, placeY = y, placeZ = z;
             
-            // Calculate placement position based on face normal
+            // Calculate placement position based on face normal - EXACT SAME LOGIC AS VISUAL OVERLAY
             if (face && face.normal) {
-                if (face.normal.x > 0) placeX++;
-                else if (face.normal.x < 0) placeX--;
-                else if (face.normal.y > 0) placeY++;
-                else if (face.normal.y < 0) placeY--;
-                else if (face.normal.z > 0) placeZ++;
-                else if (face.normal.z < 0) placeZ--;
+                const normal = face.normal;
                 
+                // Round normals to ensure they're exactly 0, 1, or -1 (prevent floating point precision issues)
+                const roundedNormal = {
+                    x: Math.round(normal.x),
+                    y: Math.round(normal.y),
+                    z: Math.round(normal.z)
+                };
+                
+                // Use the exact same calculation as the visual overlay positioning
+                // The placement position is the adjacent block in the normal direction
+                placeX = x + roundedNormal.x;
+                placeY = y + roundedNormal.y;
+                placeZ = z + roundedNormal.z;
+                
+                console.log(`📍 Original normal: (${normal.x.toFixed(3)}, ${normal.y.toFixed(3)}, ${normal.z.toFixed(3)})`);
+                console.log(`📍 Rounded normal: (${roundedNormal.x}, ${roundedNormal.y}, ${roundedNormal.z})`);
+                console.log(`📍 Target block: (${x}, ${y}, ${z})`);
                 console.log(`📍 Calculated placement position: (${placeX}, ${placeY}, ${placeZ})`);
+                
+                // Validation: Check if visual overlay position matches placement position
+                if (this.targetBlockHelper && this.targetBlockHelper.visible) {
+                    const overlayPos = this.targetBlockHelper.position;
+                    const expectedOverlayX = placeX + 0.5;
+                    const expectedOverlayY = placeY + 0.5;
+                    const expectedOverlayZ = placeZ + 0.5;
+                    
+                    if (Math.abs(overlayPos.x - expectedOverlayX) > 0.001 ||
+                        Math.abs(overlayPos.y - expectedOverlayY) > 0.001 ||
+                        Math.abs(overlayPos.z - expectedOverlayZ) > 0.001) {
+                        console.warn(`⚠️ MISMATCH: Overlay at (${overlayPos.x.toFixed(3)}, ${overlayPos.y.toFixed(3)}, ${overlayPos.z.toFixed(3)}) vs Expected (${expectedOverlayX}, ${expectedOverlayY}, ${expectedOverlayZ})`);
+                    } else {
+                        console.log(`✅ Position validation: Overlay and placement positions match perfectly`);
+                    }
+                }
             } else {
                 console.warn('⚠️ No face normal found, using target block position');
             }
@@ -6828,18 +6855,30 @@ class MinecraftClone {
                 const normal = target.face.normal;
                 this.targetBlockHelper.visible = true;
                 
-                // Position the face helper on the targeted face
+                // Round normals to ensure they're exactly 0, 1, or -1 (prevent floating point precision issues)
+                const roundedNormal = {
+                    x: Math.round(normal.x),
+                    y: Math.round(normal.y),
+                    z: Math.round(normal.z)
+                };
+                
+                // Calculate the EXACT placement position using the same logic as placeBlock()
+                const placeX = x + roundedNormal.x;
+                const placeY = y + roundedNormal.y;
+                const placeZ = z + roundedNormal.z;
+                
+                // Position the face helper at the CENTER of where the block will be placed
                 this.targetBlockHelper.position.set(
-                    x + 0.5 + normal.x * 0.501,
-                    y + 0.5 + normal.y * 0.501,
-                    z + 0.5 + normal.z * 0.501
+                    placeX + 0.5,
+                    placeY + 0.5,
+                    placeZ + 0.5
                 );
                 
-                // Orient the face helper to match the face normal
+                // Orient the face helper to show the face that was clicked
                 this.targetBlockHelper.lookAt(
-                    this.targetBlockHelper.position.x + normal.x,
-                    this.targetBlockHelper.position.y + normal.y,
-                    this.targetBlockHelper.position.z + normal.z
+                    this.targetBlockHelper.position.x - roundedNormal.x,
+                    this.targetBlockHelper.position.y - roundedNormal.y,
+                    this.targetBlockHelper.position.z - roundedNormal.z
                 );
                 
                 // Change color based on selected block type
@@ -6849,7 +6888,18 @@ class MinecraftClone {
                 this.targetBlockHelper.visible = false;
             }
             
-            this.currentTargetBlock = { x, y, z, face: target.face };
+            // Store both the target block and calculated placement position
+            const placementPos = target.face && target.face.normal ? {
+                x: x + Math.round(target.face.normal.x),
+                y: y + Math.round(target.face.normal.y),
+                z: z + Math.round(target.face.normal.z)
+            } : { x, y, z };
+            
+            this.currentTargetBlock = { 
+                x, y, z, 
+                face: target.face,
+                placementPosition: placementPos
+            };
         } else {
             // No target block
             this.targetBlockWireframe.visible = false;
