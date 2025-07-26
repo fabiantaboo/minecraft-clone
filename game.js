@@ -6634,6 +6634,30 @@ class MinecraftClone {
                                 z: pos.z, 
                                 blockType: blockType 
                             };
+                            
+                            // Calculate correct face normal for cube blocks
+                            const point = intersect.point;
+                            const blockCenter = new THREE.Vector3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5);
+                            const direction = new THREE.Vector3().subVectors(point, blockCenter);
+                            
+                            // Determine which face was hit by finding the largest component
+                            const absX = Math.abs(direction.x);
+                            const absY = Math.abs(direction.y);
+                            const absZ = Math.abs(direction.z);
+                            
+                            let normal = new THREE.Vector3();
+                            if (absX > absY && absX > absZ) {
+                                // Hit side face (X axis)
+                                normal.x = direction.x > 0 ? 1 : -1;
+                            } else if (absY > absX && absY > absZ) {
+                                // Hit top/bottom face (Y axis)
+                                normal.y = direction.y > 0 ? 1 : -1;
+                            } else {
+                                // Hit front/back face (Z axis)
+                                normal.z = direction.z > 0 ? 1 : -1;
+                            }
+                            
+                            intersect.face = { normal };
                             allIntersects.push(intersect);
                         }
                     }
@@ -6714,27 +6738,17 @@ class MinecraftClone {
             
             let placeX = x, placeY = y, placeZ = z;
             
-            // Calculate placement position based on face normal - EXACT SAME LOGIC AS VISUAL OVERLAY
+            // Calculate placement position - same logic as visual overlay
             if (face && face.normal) {
                 const normal = face.normal;
                 
-                // Round normals to ensure they're exactly 0, 1, or -1 (prevent floating point precision issues)
-                const roundedNormal = {
-                    x: Math.round(normal.x),
-                    y: Math.round(normal.y),
-                    z: Math.round(normal.z)
-                };
+                placeX = x + normal.x;
+                placeY = y + normal.y;
+                placeZ = z + normal.z;
                 
-                // Use the exact same calculation as the visual overlay positioning
-                // The placement position is the adjacent block in the normal direction
-                placeX = x + roundedNormal.x;
-                placeY = y + roundedNormal.y;
-                placeZ = z + roundedNormal.z;
-                
-                console.log(`📍 Original normal: (${normal.x.toFixed(3)}, ${normal.y.toFixed(3)}, ${normal.z.toFixed(3)})`);
-                console.log(`📍 Rounded normal: (${roundedNormal.x}, ${roundedNormal.y}, ${roundedNormal.z})`);
+                console.log(`📍 Face normal: (${normal.x}, ${normal.y}, ${normal.z})`);
                 console.log(`📍 Target block: (${x}, ${y}, ${z})`);
-                console.log(`📍 Calculated placement position: (${placeX}, ${placeY}, ${placeZ})`);
+                console.log(`📍 Placement position: (${placeX}, ${placeY}, ${placeZ})`);
                 
                 // Validation: Check if visual overlay position matches placement position
                 if (this.targetBlockHelper && this.targetBlockHelper.visible) {
@@ -6846,39 +6860,25 @@ class MinecraftClone {
         if (target && target.object.userData) {
             const { x, y, z, blockType } = target.object.userData;
             
-            // Update wireframe position
+            // Show wireframe around the target block (for breaking)
             this.targetBlockWireframe.position.set(x + 0.5, y + 0.5, z + 0.5);
             this.targetBlockWireframe.visible = true;
             
-            // Update face helper for placement preview
+            // Show placement preview ONLY if we have a valid face normal
             if (target.face && target.face.normal) {
                 const normal = target.face.normal;
                 this.targetBlockHelper.visible = true;
                 
-                // Round normals to ensure they're exactly 0, 1, or -1 (prevent floating point precision issues)
-                const roundedNormal = {
-                    x: Math.round(normal.x),
-                    y: Math.round(normal.y),
-                    z: Math.round(normal.z)
-                };
+                // Calculate placement position
+                const placeX = x + normal.x;
+                const placeY = y + normal.y;
+                const placeZ = z + normal.z;
                 
-                // Calculate the EXACT placement position using the same logic as placeBlock()
-                const placeX = x + roundedNormal.x;
-                const placeY = y + roundedNormal.y;
-                const placeZ = z + roundedNormal.z;
-                
-                // Position the face helper at the CENTER of where the block will be placed
+                // Position the helper at the placement location
                 this.targetBlockHelper.position.set(
                     placeX + 0.5,
                     placeY + 0.5,
                     placeZ + 0.5
-                );
-                
-                // Orient the face helper to show the face that was clicked
-                this.targetBlockHelper.lookAt(
-                    this.targetBlockHelper.position.x - roundedNormal.x,
-                    this.targetBlockHelper.position.y - roundedNormal.y,
-                    this.targetBlockHelper.position.z - roundedNormal.z
                 );
                 
                 // Change color based on selected block type
