@@ -4,7 +4,7 @@ class MinecraftClone {
         this.camera = null;
         this.renderer = null;
         this.world = new Map();
-        this.worldHeight = 64;
+        this.worldHeight = 128;
         this.seaLevel = 20;
         this.worldSeed = Math.floor(Math.random() * 10000);
         
@@ -48,13 +48,15 @@ class MinecraftClone {
         this.blockMaterials = {};
         this.blockMeshes = new Map();
         this.loadedChunks = new Map();
+        this.blockPool = new Map(); // Pool of reusable block meshes
         this.chunkSize = 16;
-        this.renderDistance = 4;
+        this.renderDistance = 6;
         this.lodLevels = {
             high: 1,    // Full detail chunks (distance 0-1)
-            medium: 2,  // Surface only chunks (distance 2-3) 
-            low: 4      // Outline only chunks (distance 4+)
+            medium: 3,  // Surface only chunks (distance 2-3) 
+            low: 6      // Outline only chunks (distance 4-6)
         };
+        this.frustum = new THREE.Frustum();
         this.lastPlayerChunk = { x: null, z: null };
         
         try {
@@ -362,45 +364,46 @@ class MinecraftClone {
                 
                 const biome = this.getBiome(worldX, worldZ);
                 
-                // Multi-layer noise for dramatic terrain
-                const baseNoise = (this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 6, 0.6, 1) + 1) / 2;
-                const detailNoise = (this.octaveNoise(worldX * 0.05, 0, worldZ * 0.05, 4, 0.5, 1) + 1) / 2;
-                const ridgeNoise = Math.abs(this.octaveNoise(worldX * 0.008, 0, worldZ * 0.008, 3, 0.6, 1));
+                // EXTREME multi-layer noise for epic terrain
+                const continentalNoise = (this.octaveNoise(worldX * 0.003, 0, worldZ * 0.003, 8, 0.7, 1) + 1) / 2;
+                const mountainNoise = (this.octaveNoise(worldX * 0.008, 0, worldZ * 0.008, 6, 0.6, 1) + 1) / 2;
+                const ridgeNoise = Math.abs(this.octaveNoise(worldX * 0.015, 0, worldZ * 0.015, 4, 0.5, 1));
+                const detailNoise = (this.octaveNoise(worldX * 0.04, 0, worldZ * 0.04, 3, 0.4, 1) + 1) / 2;
                 const caveNoise = this.octaveNoise(worldX * 0.08, worldZ * 0.08, 0, 3, 0.5, 1);
                 
                 let baseHeight = this.seaLevel;
                 
-                // Dramatic terrain based on biome
+                // EXTREME terrain based on biome - AAA game level
                 switch (biome) {
                     case 'mountain':
-                        baseHeight += baseNoise * 15 + ridgeNoise * 8 + 5;
+                        baseHeight += continentalNoise * 30 + mountainNoise * 25 + ridgeNoise * 15 + 10;
                         break;
                     case 'snow_mountain':
-                        baseHeight += baseNoise * 20 + ridgeNoise * 12 + 8;
+                        baseHeight += continentalNoise * 40 + mountainNoise * 35 + ridgeNoise * 25 + 15;
                         break;
                     case 'canyon':
-                        baseHeight += baseNoise * 2 - ridgeNoise * 6 - 2;
+                        baseHeight += continentalNoise * 8 - ridgeNoise * 20 - mountainNoise * 10 - 5;
                         break;
                     case 'valley':
-                        baseHeight += baseNoise * 2 + detailNoise * 1;
+                        baseHeight += continentalNoise * 5 + detailNoise * 3 - 2;
                         break;
                     case 'hills':
-                        baseHeight += baseNoise * 8 + detailNoise * 3 + 2;
+                        baseHeight += continentalNoise * 15 + mountainNoise * 10 + detailNoise * 5 + 3;
                         break;
                     case 'plains':
-                        baseHeight += baseNoise * 3 + detailNoise * 1 + 1;
+                        baseHeight += continentalNoise * 8 + detailNoise * 2 + 1;
                         break;
                     case 'forest':
-                        baseHeight += baseNoise * 6 + detailNoise * 2 + 2;
+                        baseHeight += continentalNoise * 12 + mountainNoise * 8 + detailNoise * 3 + 2;
                         break;
                     case 'desert':
-                        baseHeight += baseNoise * 4 + detailNoise * 2 + 1;
+                        baseHeight += continentalNoise * 10 + detailNoise * 4 + 1;
                         break;
                     case 'tundra':
-                        baseHeight += baseNoise * 5 + detailNoise * 2 + 2;
+                        baseHeight += continentalNoise * 18 + mountainNoise * 12 + detailNoise * 4 + 5;
                         break;
                     default:
-                        baseHeight += baseNoise * 4 + 2;
+                        baseHeight += continentalNoise * 10 + detailNoise * 3 + 2;
                 }
                 
                 const terrainHeight = Math.floor(baseHeight);
@@ -412,14 +415,20 @@ class MinecraftClone {
                     if (y === 0) {
                         blockType = 'bedrock';
                     } else if (y < terrainHeight - 5) {
-                        if (caveNoise > 0.6 && y > 5) {
-                            blockType = 'air';
+                        // Enhanced cave system with large caverns
+                        const largeCaveNoise = this.octaveNoise(worldX * 0.02, y * 0.02, worldZ * 0.02, 3, 0.6, 1);
+                        const tunnelNoise = this.octaveNoise(worldX * 0.06, y * 0.06, worldZ * 0.06, 2, 0.5, 1);
+                        
+                        if ((caveNoise > 0.65 && y > 8) || (largeCaveNoise > 0.7 && y > 5) || (tunnelNoise > 0.8)) {
+                            blockType = 'air'; // Caves and tunnels
                         } else {
                             blockType = 'stone';
                             
-                            if (Math.random() < 0.01 && y < 20) blockType = 'coal';
-                            if (Math.random() < 0.005 && y < 15) blockType = 'iron';
-                            if (Math.random() < 0.002 && y < 10) blockType = 'gold';
+                            // Enhanced ore distribution
+                            const oreRandom = Math.random();
+                            if (oreRandom < 0.015 && y < 25) blockType = 'coal';
+                            else if (oreRandom < 0.008 && y < 18) blockType = 'iron';
+                            else if (oreRandom < 0.003 && y < 12) blockType = 'gold';
                         }
                     } else if (y < terrainHeight - 1) {
                         switch (biome) {
@@ -467,10 +476,15 @@ class MinecraftClone {
                     chunk.set(blockKey, blockType);
                 }
                 
-                if (biome === 'forest' && Math.random() < 0.05 && terrainHeight > this.seaLevel) {
+                // Enhanced structure generation based on biome
+                if (biome === 'forest' && Math.random() < 0.08 && terrainHeight > this.seaLevel) {
                     this.generateTreeInChunk(chunk, worldX, terrainHeight, worldZ, biome);
-                } else if (biome === 'desert' && Math.random() < 0.001) {
+                } else if (biome === 'desert' && Math.random() < 0.002) {
                     this.generateCactusInChunk(chunk, worldX, terrainHeight, worldZ);
+                } else if (biome === 'snow_mountain' && Math.random() < 0.001 && terrainHeight > 50) {
+                    this.generateIcePeakInChunk(chunk, worldX, terrainHeight, worldZ);
+                } else if (biome === 'canyon' && Math.random() < 0.003) {
+                    this.generateRockFormationInChunk(chunk, worldX, terrainHeight, worldZ);
                 }
             }
         }
@@ -513,6 +527,35 @@ class MinecraftClone {
         for (let i = 0; i < cactusHeight; i++) {
             if (y + i < this.worldHeight) {
                 chunk.set(`${x}_${y + i}_${z}`, 'leaves');
+            }
+        }
+    }
+    
+    generateIcePeakInChunk(chunk, x, y, z) {
+        const peakHeight = 5 + Math.floor(Math.random() * 8);
+        
+        for (let i = 0; i < peakHeight; i++) {
+            for (let dx = -Math.floor(i/2); dx <= Math.floor(i/2); dx++) {
+                for (let dz = -Math.floor(i/2); dz <= Math.floor(i/2); dz++) {
+                    if (y + peakHeight - i < this.worldHeight && Math.random() > 0.3) {
+                        chunk.set(`${x + dx}_${y + peakHeight - i}_${z + dz}`, 'ice');
+                    }
+                }
+            }
+        }
+    }
+    
+    generateRockFormationInChunk(chunk, x, y, z) {
+        const formationHeight = 3 + Math.floor(Math.random() * 6);
+        
+        for (let i = 0; i < formationHeight; i++) {
+            const width = Math.max(1, 3 - Math.floor(i/2));
+            for (let dx = -width; dx <= width; dx++) {
+                for (let dz = -width; dz <= width; dz++) {
+                    if (y + i < this.worldHeight && Math.random() > 0.4) {
+                        chunk.set(`${x + dx}_${y + i}_${z + dz}`, 'mountain_stone');
+                    }
+                }
             }
         }
     }
@@ -564,13 +607,25 @@ class MinecraftClone {
         const chunksToKeep = new Set();
         const chunksToLoad = new Set();
         
+        // Update frustum for culling
+        this.frustum.setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(
+                this.camera.projectionMatrix,
+                this.camera.matrixWorldInverse
+            )
+        );
+        
         for (let chunkX = playerChunkX - this.renderDistance; chunkX <= playerChunkX + this.renderDistance; chunkX++) {
             for (let chunkZ = playerChunkZ - this.renderDistance; chunkZ <= playerChunkZ + this.renderDistance; chunkZ++) {
                 const chunkKey = `${chunkX}_${chunkZ}`;
-                chunksToKeep.add(chunkKey);
                 
-                if (!this.loadedChunks.has(chunkKey)) {
-                    chunksToLoad.add(chunkKey);
+                // Frustum culling - only load visible chunks
+                if (this.isChunkInFrustum(chunkX, chunkZ)) {
+                    chunksToKeep.add(chunkKey);
+                    
+                    if (!this.loadedChunks.has(chunkKey)) {
+                        chunksToLoad.add(chunkKey);
+                    }
                 }
             }
         }
@@ -581,6 +636,20 @@ class MinecraftClone {
             const [chunkX, chunkZ] = chunkKey.split('_').map(Number);
             this.loadChunk(chunkX, chunkZ);
         });
+    }
+    
+    isChunkInFrustum(chunkX, chunkZ) {
+        const chunkCenterX = chunkX * this.chunkSize + this.chunkSize / 2;
+        const chunkCenterZ = chunkZ * this.chunkSize + this.chunkSize / 2;
+        const chunkCenterY = this.worldHeight / 2;
+        
+        // Create bounding sphere for chunk
+        const chunkSphere = new THREE.Sphere(
+            new THREE.Vector3(chunkCenterX, chunkCenterY, chunkCenterZ),
+            this.chunkSize * 0.8 // Sphere radius
+        );
+        
+        return this.frustum.intersectsSphere(chunkSphere);
     }
     
     unloadDistantChunks(chunksToKeep) {
@@ -622,19 +691,22 @@ class MinecraftClone {
                 solidBlocks++;
                 const [x, y, z] = blockKey.split('_').map(Number);
                 
-                // Smart LOD rendering based on distance
+                // SUPER AGGRESSIVE LOD for extreme performance
                 let shouldRender = false;
                 
                 if (distance <= this.lodLevels.high) {
-                    // High detail: render all visible blocks
+                    // High detail: render all visible blocks (near chunks)
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData);
                 } else if (distance <= this.lodLevels.medium) {
-                    // Medium detail: only surface blocks
-                    shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && y > this.seaLevel - 2;
-                } else {
-                    // Low detail: only top surface and high blocks
+                    // Medium detail: only every 2nd block + surface only
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 (y > this.seaLevel + 5 || this.isTopSurface(x, y, z, chunkData));
+                                 y > this.seaLevel - 2 && 
+                                 ((x + z) % 2 === 0);
+                } else {
+                    // Ultra low detail: only peaks and major features, every 4th block
+                    shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
+                                 (y > this.seaLevel + 20 || this.isTopSurface(x, y, z, chunkData)) &&
+                                 ((x + z + y) % 4 === 0);
                 }
                 
                 if (shouldRender) {
@@ -660,7 +732,7 @@ class MinecraftClone {
             chunkBlocks.forEach(blockKey => {
                 const block = this.blockMeshes.get(blockKey);
                 if (block) {
-                    this.scene.remove(block);
+                    this.returnBlockToPool(block);
                     this.blockMeshes.delete(blockKey);
                 }
             });
@@ -732,14 +804,36 @@ class MinecraftClone {
         const material = this.blockMaterials[blockType];
         if (!material) return;
         
-        const block = new THREE.Mesh(this.blockGeometry, material);
+        // Try to get from pool first
+        let block = this.getBlockFromPool(blockType);
+        if (!block) {
+            block = new THREE.Mesh(this.blockGeometry, material);
+            block.castShadow = true;
+            block.receiveShadow = true;
+        }
+        
         block.position.set(x, y, z);
-        block.castShadow = true;
-        block.receiveShadow = true;
         block.userData = { x, y, z, blockType };
         
         this.blockMeshes.set(key, block);
         this.scene.add(block);
+    }
+    
+    getBlockFromPool(blockType) {
+        if (!this.blockPool.has(blockType)) {
+            this.blockPool.set(blockType, []);
+        }
+        return this.blockPool.get(blockType).pop();
+    }
+    
+    returnBlockToPool(block) {
+        const blockType = block.userData.blockType;
+        if (!this.blockPool.has(blockType)) {
+            this.blockPool.set(blockType, []);
+        }
+        
+        this.scene.remove(block);
+        this.blockPool.get(blockType).push(block);
     }
     
     update() {
