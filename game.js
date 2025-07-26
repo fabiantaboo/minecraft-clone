@@ -185,18 +185,29 @@ class MinecraftClone {
         
         console.log(`Chunk size: ${spawnChunk.size} blocks`);
         
+        // Debug: Zeige Terrain-Informationen für Spawn-Position
+        const spawnBiome = this.getBiome(spawnX, spawnZ);
+        const spawnHeightNoise = (this.octaveNoise(spawnX * 0.01, 0, spawnZ * 0.01, 6, 0.6, 1) + 1) / 2;
+        console.log(`Spawn biome: ${spawnBiome}, height noise: ${spawnHeightNoise.toFixed(3)}`);
+        
         let spawnY = this.seaLevel + 10;
         let foundGround = false;
         
+        // Verbesserte Spawn-Suche mit detaillierter Ausgabe
+        console.log(`Searching for spawn ground around X=${spawnX}, Z=${spawnZ}:`);
         for (let y = this.worldHeight - 1; y >= 0; y--) {
             const blockKey = `${spawnX}_${y}_${spawnZ}`;
             const blockType = spawnChunk.get(blockKey);
-            console.log(`Checking Y=${y}, block: ${blockType}`);
+            
+            // Zeige nur relevante Y-Werte
+            if (y >= this.seaLevel - 5) {
+                console.log(`  Y=${y}: ${blockType}`);
+            }
             
             if (blockType && blockType !== 'air' && blockType !== 'water') {
                 spawnY = y + 3;
                 foundGround = true;
-                console.log(`Found ground at Y=${y}, spawning at Y=${spawnY}`);
+                console.log(`✓ Found solid ground at Y=${y}, spawning player at Y=${spawnY}`);
                 break;
             }
         }
@@ -322,23 +333,25 @@ class MinecraftClone {
                 
                 const biome = this.getBiome(worldX, worldZ);
                 
-                const heightNoise = this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 6, 0.6, 1);
+                // Normalisiere Noise-Werte zu 0-1 Bereich statt -1 bis 1
+                const heightNoise = (this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 6, 0.6, 1) + 1) / 2;
                 const caveNoise = this.octaveNoise(worldX * 0.05, worldZ * 0.05, 0, 3, 0.5, 1);
                 
                 let baseHeight = this.seaLevel;
                 
+                // Stelle sicher, dass Terrain immer über dem Meeresspiegel liegt
                 switch (biome) {
                     case 'plains':
-                        baseHeight += heightNoise * 8;
+                        baseHeight += heightNoise * 8 + 2; // +2 für Mindesthöhe
                         break;
                     case 'forest':
-                        baseHeight += heightNoise * 12;
+                        baseHeight += heightNoise * 12 + 3;
                         break;
                     case 'desert':
-                        baseHeight += heightNoise * 6;
+                        baseHeight += heightNoise * 6 + 1;
                         break;
                     case 'snow':
-                        baseHeight += heightNoise * 20;
+                        baseHeight += heightNoise * 20 + 5;
                         break;
                 }
                 
@@ -373,7 +386,8 @@ class MinecraftClone {
                             default:
                                 blockType = 'grass';
                         }
-                    } else if (y < this.seaLevel) {
+                    } else if (y <= this.seaLevel && terrainHeight <= this.seaLevel) {
+                        // Nur Wasser generieren wenn Terrain unter Meeresspiegel liegt
                         blockType = 'water';
                     }
                     
