@@ -60,7 +60,7 @@ class MinecraftClone {
         this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
         
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(16, 20, 16);
+        this.camera.position.set(16, 25, 16);
         
         this.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
         if (!this.renderer.getContext()) throw new Error('WebGL not supported');
@@ -95,14 +95,16 @@ class MinecraftClone {
     }
     
     setupControls() {
-        document.addEventListener('click', () => {
+        const canvas = document.getElementById('canvas');
+        
+        canvas.addEventListener('click', () => {
             if (!this.isPointerLocked) {
-                document.body.requestPointerLock();
+                canvas.requestPointerLock();
             }
         });
         
         document.addEventListener('pointerlockchange', () => {
-            this.isPointerLocked = document.pointerLockElement === document.body;
+            this.isPointerLocked = document.pointerLockElement === canvas;
         });
         
         document.addEventListener('mousemove', (event) => {
@@ -430,24 +432,28 @@ class MinecraftClone {
         
         this.camera.position.set(tempX, tempY, tempZ);
         
-        if (this.camera.position.y < 0) {
-            this.camera.position.y = 20;
+        if (this.camera.position.y < 5) {
+            this.camera.position.y = 25;
+            this.camera.position.x = 16;
+            this.camera.position.z = 16;
+            this.velocity.x = 0;
             this.velocity.y = 0;
+            this.velocity.z = 0;
         }
     }
     
     isValidPosition(x, y, z) {
         const blockX = Math.floor(x);
-        const blockY = Math.floor(y - 0.5);
+        const blockY = Math.floor(y - 1.5);
         const blockZ = Math.floor(z);
         
         if (blockX < 0 || blockX >= this.worldSize || 
             blockY < 0 || blockY >= this.worldHeight || 
             blockZ < 0 || blockZ >= this.worldSize) {
-            return false;
+            return blockY < 0;
         }
         
-        return this.world[blockX][blockZ][blockY] === 'air';
+        return this.world[blockX] && this.world[blockX][blockZ] && this.world[blockX][blockZ][blockY] === 'air';
     }
     
     updateCamera() {
