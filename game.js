@@ -6635,26 +6635,38 @@ class MinecraftClone {
                                 blockType: blockType 
                             };
                             
-                            // Calculate correct face normal for cube blocks
+                            // Simple, reliable face detection using intersection point
                             const point = intersect.point;
-                            const blockCenter = new THREE.Vector3(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5);
-                            const direction = new THREE.Vector3().subVectors(point, blockCenter);
                             
-                            // Determine which face was hit by finding the largest component
-                            const absX = Math.abs(direction.x);
-                            const absY = Math.abs(direction.y);
-                            const absZ = Math.abs(direction.z);
+                            // Get relative position within the block (0 to 1)
+                            const relX = point.x - pos.x;
+                            const relY = point.y - pos.y;
+                            const relZ = point.z - pos.z;
                             
+                            // Determine which face was hit based on which coordinate is closest to edge
                             let normal = new THREE.Vector3();
-                            if (absX > absY && absX > absZ) {
-                                // Hit side face (X axis)
-                                normal.x = direction.x > 0 ? 1 : -1;
-                            } else if (absY > absX && absY > absZ) {
-                                // Hit top/bottom face (Y axis)
-                                normal.y = direction.y > 0 ? 1 : -1;
-                            } else {
-                                // Hit front/back face (Z axis)
-                                normal.z = direction.z > 0 ? 1 : -1;
+                            
+                            // Check X faces (left/right)
+                            if (relX <= 0.001) {
+                                normal.set(-1, 0, 0); // Left face
+                            } else if (relX >= 0.999) {
+                                normal.set(1, 0, 0);  // Right face
+                            }
+                            // Check Y faces (bottom/top)
+                            else if (relY <= 0.001) {
+                                normal.set(0, -1, 0); // Bottom face
+                            } else if (relY >= 0.999) {
+                                normal.set(0, 1, 0);  // Top face
+                            }
+                            // Check Z faces (back/front)
+                            else if (relZ <= 0.001) {
+                                normal.set(0, 0, -1); // Back face
+                            } else if (relZ >= 0.999) {
+                                normal.set(0, 0, 1);  // Front face
+                            }
+                            // Fallback - shouldn't happen but just in case
+                            else {
+                                normal.set(0, 1, 0);  // Default to top face
                             }
                             
                             intersect.face = { normal };
