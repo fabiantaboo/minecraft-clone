@@ -19,6 +19,13 @@ class MinecraftClone {
         this.gravity = -0.02;
         this.jumpPower = 0.3;
         
+        // Flight system
+        this.isFlying = false;
+        this.flightSpeed = 0.25;
+        this.flightBoostSpeed = 0.5;
+        this.flightAcceleration = 0.8;
+        this.flightDeceleration = 0.9;
+        
         this.selectedBlockType = 'grass';
         this.blockTypes = {
             air: null,
@@ -141,6 +148,11 @@ class MinecraftClone {
             if (event.code === 'Escape') {
                 document.exitPointerLock();
             }
+            
+            // Toggle flight mode with F key
+            if (event.code === 'KeyF') {
+                this.toggleFlightMode();
+            }
         });
         
         document.addEventListener('keyup', (event) => {
@@ -182,6 +194,20 @@ class MinecraftClone {
             
             this.selectedBlockType = blockTypeKeys[newIndex];
         });
+    }
+    
+    toggleFlightMode() {
+        this.isFlying = !this.isFlying;
+        
+        if (this.isFlying) {
+            // Entering flight mode
+            this.velocity.y = 0; // Stop falling
+            console.log('🚁 Flight mode ENABLED - Use Space/Shift for up/down');
+        } else {
+            // Exiting flight mode - land gently
+            this.velocity.y = -0.1;
+            console.log('🚶 Flight mode DISABLED - Back to walking');
+        }
     }
     
     findSafeSpawnPosition() {
@@ -850,27 +876,72 @@ class MinecraftClone {
         if (this.keys['KeyA']) moveX -= 1;
         if (this.keys['KeyD']) moveX += 1;
         
-        if (moveX !== 0 || moveZ !== 0) {
-            const angle = this.mouse.x;
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
+        // Flight mode handling
+        if (this.isFlying) {
+            // Smooth flight acceleration
+            if (moveX !== 0 || moveZ !== 0) {
+                const angle = this.mouse.x;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                
+                const worldMoveX = moveZ * sin + moveX * cos;
+                const worldMoveZ = moveZ * cos - moveX * sin;
+                
+                const currentSpeed = this.keys['ShiftLeft'] || this.keys['ShiftRight'] ? 
+                    this.flightBoostSpeed : this.flightSpeed;
+                
+                this.velocity.x += worldMoveX * currentSpeed * this.flightAcceleration;
+                this.velocity.z += worldMoveZ * currentSpeed * this.flightAcceleration;
+                
+                // Cap max speed
+                const maxSpeed = currentSpeed * 2;
+                const currentHorizontalSpeed = Math.sqrt(this.velocity.x * this.velocity.x + this.velocity.z * this.velocity.z);
+                if (currentHorizontalSpeed > maxSpeed) {
+                    this.velocity.x = (this.velocity.x / currentHorizontalSpeed) * maxSpeed;
+                    this.velocity.z = (this.velocity.z / currentHorizontalSpeed) * maxSpeed;
+                }
+            } else {
+                this.velocity.x *= this.flightDeceleration;
+                this.velocity.z *= this.flightDeceleration;
+            }
             
-            const worldMoveX = moveZ * sin + moveX * cos;
-            const worldMoveZ = moveZ * cos - moveX * sin;
+            // Vertical flight controls
+            if (this.keys['Space']) {
+                this.velocity.y += this.flightSpeed * this.flightAcceleration;
+            } else if (this.keys['ShiftLeft'] || this.keys['ShiftRight']) {
+                this.velocity.y -= this.flightSpeed * this.flightAcceleration;
+            } else {
+                this.velocity.y *= this.flightDeceleration;
+            }
             
-            this.velocity.x = worldMoveX * this.moveSpeed;
-            this.velocity.z = worldMoveZ * this.moveSpeed;
+            // Cap vertical speed
+            const maxVerticalSpeed = this.flightSpeed * 3;
+            this.velocity.y = Math.max(-maxVerticalSpeed, Math.min(maxVerticalSpeed, this.velocity.y));
+            
         } else {
-            this.velocity.x *= 0.85;
-            this.velocity.z *= 0.85;
+            // Normal walking mode
+            if (moveX !== 0 || moveZ !== 0) {
+                const angle = this.mouse.x;
+                const cos = Math.cos(angle);
+                const sin = Math.sin(angle);
+                
+                const worldMoveX = moveZ * sin + moveX * cos;
+                const worldMoveZ = moveZ * cos - moveX * sin;
+                
+                this.velocity.x = worldMoveX * this.moveSpeed;
+                this.velocity.z = worldMoveZ * this.moveSpeed;
+            } else {
+                this.velocity.x *= 0.85;
+                this.velocity.z *= 0.85;
+            }
+            
+            if (this.keys['Space'] && this.onGround) {
+                this.velocity.y = this.jumpPower;
+                this.onGround = false;
+            }
+            
+            this.velocity.y += this.gravity;
         }
-        
-        if (this.keys['Space'] && this.onGround) {
-            this.velocity.y = this.jumpPower;
-            this.onGround = false;
-        }
-        
-        this.velocity.y += this.gravity;
         
         const newX = this.camera.position.x + this.velocity.x;
         const newY = this.camera.position.y + this.velocity.y;
@@ -885,25 +956,32 @@ class MinecraftClone {
         let tempY = this.camera.position.y;
         let tempZ = this.camera.position.z;
         
-        if (this.isValidPosition(newX, tempY, tempZ)) {
+        // Skip collision detection when flying
+        if (this.isFlying) {
             tempX = newX;
-        } else {
-            this.velocity.x = 0;
-        }
-        
-        if (this.isValidPosition(tempX, tempY, newZ)) {
+            tempY = newY;
             tempZ = newZ;
         } else {
-            this.velocity.z = 0;
-        }
-        
-        if (this.isValidPosition(tempX, newY, tempZ)) {
-            tempY = newY;
-        } else {
-            if (this.velocity.y < 0) {
-                this.onGround = true;
+            if (this.isValidPosition(newX, tempY, tempZ)) {
+                tempX = newX;
+            } else {
+                this.velocity.x = 0;
             }
-            this.velocity.y = 0;
+            
+            if (this.isValidPosition(tempX, tempY, newZ)) {
+                tempZ = newZ;
+            } else {
+                this.velocity.z = 0;
+            }
+            
+            if (this.isValidPosition(tempX, newY, tempZ)) {
+                tempY = newY;
+            } else {
+                if (this.velocity.y < 0) {
+                    this.onGround = true;
+                }
+                this.velocity.y = 0;
+            }
         }
         
         this.camera.position.set(tempX, tempY, tempZ);
@@ -939,8 +1017,9 @@ class MinecraftClone {
     
     updateUI() {
         const pos = this.camera.position;
+        const flightStatus = this.isFlying ? ' ✈️ FLYING' : '';
         document.getElementById('position').textContent = 
-            `Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}`;
+            `Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}${flightStatus}`;
         
         this.frameCount++;
         const currentTime = performance.now();
