@@ -68,7 +68,7 @@ class MinecraftClone {
         this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
         
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.camera.position.set(16, 25, 16);
+        this.findSafeSpawnPosition();
         
         this.renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
         if (!this.renderer.getContext()) throw new Error('WebGL not supported');
@@ -170,6 +170,32 @@ class MinecraftClone {
             
             this.selectedBlockType = blockTypeKeys[newIndex];
         });
+    }
+    
+    findSafeSpawnPosition() {
+        const spawnX = 8;
+        const spawnZ = 8;
+        
+        const spawnChunkX = Math.floor(spawnX / this.chunkSize);
+        const spawnChunkZ = Math.floor(spawnZ / this.chunkSize);
+        
+        const spawnChunk = this.generateChunk(spawnChunkX, spawnChunkZ);
+        this.world.set(`${spawnChunkX}_${spawnChunkZ}`, spawnChunk);
+        
+        let spawnY = this.worldHeight - 1;
+        for (let y = this.worldHeight - 1; y >= 0; y--) {
+            const blockKey = `${spawnX}_${y}_${spawnZ}`;
+            const blockType = spawnChunk.get(blockKey);
+            if (blockType && blockType !== 'air' && blockType !== 'water') {
+                spawnY = y + 3;
+                break;
+            }
+        }
+        
+        this.camera.position.set(spawnX + 0.5, spawnY, spawnZ + 0.5);
+        console.log(`Spawned at: ${spawnX}, ${spawnY}, ${spawnZ}`);
+        
+        this.renderWorld();
     }
     
     initializePerlinNoise() {
@@ -641,10 +667,8 @@ class MinecraftClone {
         
         this.camera.position.set(tempX, tempY, tempZ);
         
-        if (this.camera.position.y < 5) {
-            this.camera.position.y = 25;
-            this.camera.position.x = 16;
-            this.camera.position.z = 16;
+        if (this.camera.position.y < 0) {
+            this.findSafeSpawnPosition();
             this.velocity.x = 0;
             this.velocity.y = 0;
             this.velocity.z = 0;
