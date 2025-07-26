@@ -8,6 +8,26 @@ class MinecraftClone {
         this.seaLevel = 20;
         this.worldSeed = Math.floor(Math.random() * 10000);
         
+        // AAA-Level Atmospheric System
+        this.atmosphericSystem = {
+            clouds: [],
+            cloudGeometry: null,
+            cloudMaterial: null,
+            skybox: null,
+            weatherSystem: null,
+            timeOfDay: 0.5, // 0 = night, 1 = day
+            weatherIntensity: 0.0
+        };
+        
+        // Enhanced environment settings
+        this.environmentSettings = {
+            fogEnabled: true,
+            cloudsEnabled: true,
+            particlesEnabled: true,
+            skyboxDynamic: true,
+            weatherEffects: true
+        };
+        
         this.moveSpeed = 0.15;
         this.mouseSensitivity = 0.002;
         this.isPointerLocked = false;
@@ -29,23 +49,58 @@ class MinecraftClone {
         this.selectedBlockType = 'grass';
         this.blockTypes = {
             air: null,
+            // Enhanced grass types with realistic colors
             grass: { color: 0x7CFC00, texture: null },
+            dark_grass: { color: 0x556B2F, texture: null },
+            tundra_grass: { color: 0x9ACD32, texture: null },
+            jungle_grass: { color: 0x228B22, texture: null },
+            savanna_grass: { color: 0xBDB76B, texture: null },
+            
+            // Terrain blocks
             dirt: { color: 0x8B4513, texture: null },
             stone: { color: 0x696969, texture: null },
+            mountain_stone: { color: 0x8B8682, texture: null },
+            sandstone: { color: 0xF4A460, texture: null },
+            bedrock: { color: 0x1A1A1A, texture: null },
+            
+            // Vegetation
             wood: { color: 0xDEB887, texture: null },
+            birch_wood: { color: 0xF5DEB3, texture: null },
+            jungle_wood: { color: 0x8B4513, texture: null },
             leaves: { color: 0x228B22, texture: null },
+            birch_leaves: { color: 0x90EE90, texture: null },
+            jungle_leaves: { color: 0x006400, texture: null },
+            
+            // Sand and desert blocks
             sand: { color: 0xF4A460, texture: null },
+            red_sand: { color: 0xC76114, texture: null },
+            
+            // Water and ice
             water: { color: 0x4169E1, texture: null, transparent: true },
+            ice: { color: 0xB0E0E6, texture: null },
+            packed_ice: { color: 0x9FC5E8, texture: null },
+            
+            // Snow and cold biome blocks
             snow: { color: 0xFFFAFA, texture: null },
+            snow_block: { color: 0xF0F8FF, texture: null },
+            
+            // Ores with better colors
             coal: { color: 0x2F2F2F, texture: null },
             iron: { color: 0xB87333, texture: null },
             gold: { color: 0xFFD700, texture: null },
-            bedrock: { color: 0x1A1A1A, texture: null },
-            mountain_stone: { color: 0x8B8682, texture: null },
-            red_sand: { color: 0xC76114, texture: null },
-            ice: { color: 0xB0E0E6, texture: null },
-            dark_grass: { color: 0x556B2F, texture: null },
-            tundra_grass: { color: 0x9ACD32, texture: null }
+            diamond: { color: 0x40E0D0, texture: null },
+            
+            // New biome-specific blocks
+            mushroom_block: { color: 0xCD853F, texture: null },
+            red_mushroom: { color: 0xFF6347, texture: null },
+            cactus: { color: 0x228B22, texture: null },
+            dead_bush: { color: 0x8B4513, texture: null },
+            clay: { color: 0x87CEEB, texture: null },
+            
+            // Special terrain features
+            obsidian: { color: 0x2F2F2F, texture: null },
+            gravel: { color: 0x808080, texture: null },
+            cobblestone: { color: 0x696969, texture: null }
         };
         
         this.raycaster = new THREE.Raycaster();
@@ -106,8 +161,11 @@ class MinecraftClone {
         if (typeof THREE === 'undefined') throw new Error('Three.js not loaded');
         
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x87CEEB);
-        this.scene.fog = new THREE.Fog(0x87CEEB, 50, 200);
+        // Dynamic sky color based on time of day
+        this.updateSkyColor();
+        
+        // Initialize atmospheric systems
+        this.initializeAtmosphericSystem();
         
         this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         this.findSafeSpawnPosition();
@@ -152,6 +210,10 @@ class MinecraftClone {
         
         this.setupControls();
         this.setupEventListeners();
+        
+        // Initialize weather and particle systems
+        this.initializeWeatherSystem();
+        this.initializeParticleSystem();
         
         this.lastTime = performance.now();
         this.frameCount = 0;
@@ -314,7 +376,23 @@ class MinecraftClone {
             p: []
         };
         
-        const permutation = [
+        // AAA-Level: Seed-based permutation table generation
+        this.generateSeededPermutation();
+        
+        // Advanced noise system with multiple noise types
+        this.noiseGenerators = {
+            continentalness: { scale: 0.003, octaves: 8, persistence: 0.7, lacunarity: 2.0 },
+            erosion: { scale: 0.008, octaves: 6, persistence: 0.6, lacunarity: 2.0 },
+            peaksAndValleys: { scale: 0.015, octaves: 4, persistence: 0.5, lacunarity: 2.0 },
+            temperature: { scale: 0.008, octaves: 4, persistence: 0.5, lacunarity: 2.0 },
+            humidity: { scale: 0.008, octaves: 4, persistence: 0.5, lacunarity: 2.0 },
+            weirdness: { scale: 0.01, octaves: 3, persistence: 0.4, lacunarity: 2.0 }
+        };
+    }
+    
+    generateSeededPermutation() {
+        // Use world seed to generate reproducible permutation
+        const basePermutation = [
             151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
             190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,
             77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,
@@ -324,10 +402,28 @@ class MinecraftClone {
             138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
         ];
         
+        // Seed-based shuffling using XORShift algorithm for consistency
+        let seed = this.worldSeed;
+        const xorshift = () => {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            return Math.abs(seed) / 2147483648;
+        };
+        
+        // Fisher-Yates shuffle with seeded random
+        const permutation = [...basePermutation];
+        for (let i = permutation.length - 1; i > 0; i--) {
+            const j = Math.floor(xorshift() * (i + 1));
+            [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
+        }
+        
         for (let i = 0; i < 256; i++) {
             this.perlin.permutation[i] = permutation[i];
             this.perlin.p[256 + i] = this.perlin.p[i] = permutation[i];
         }
+        
+        console.log(`World generated with seed: ${this.worldSeed}`);
     }
     
     fade(t) {
@@ -395,25 +491,316 @@ class MinecraftClone {
     }
     
     getBiome(x, z) {
-        const temperature = this.octaveNoise(x * 0.008, 0, z * 0.008, 4, 0.5, 1);
-        const humidity = this.octaveNoise(x * 0.008 + 1000, 0, z * 0.008 + 1000, 4, 0.5, 1);
-        const elevation = this.octaveNoise(x * 0.005, 0, z * 0.005, 6, 0.6, 1);
+        // AAA-Level: Advanced multi-dimensional biome calculation
+        const noiseGen = this.noiseGenerators;
         
-        // Dramatic biome selection based on multiple factors
-        if (elevation > 0.4) {
-            return temperature < -0.2 ? 'snow_mountain' : 'mountain';
+        const continentalness = this.octaveNoise(
+            x * noiseGen.continentalness.scale, 0, z * noiseGen.continentalness.scale,
+            noiseGen.continentalness.octaves, noiseGen.continentalness.persistence, 1
+        );
+        
+        const erosion = this.octaveNoise(
+            x * noiseGen.erosion.scale, 0, z * noiseGen.erosion.scale,
+            noiseGen.erosion.octaves, noiseGen.erosion.persistence, 1
+        );
+        
+        const peaksAndValleys = this.octaveNoise(
+            x * noiseGen.peaksAndValleys.scale, 0, z * noiseGen.peaksAndValleys.scale,
+            noiseGen.peaksAndValleys.octaves, noiseGen.peaksAndValleys.persistence, 1
+        );
+        
+        const temperature = this.octaveNoise(
+            x * noiseGen.temperature.scale + 2000, 0, z * noiseGen.temperature.scale + 2000,
+            noiseGen.temperature.octaves, noiseGen.temperature.persistence, 1
+        );
+        
+        const humidity = this.octaveNoise(
+            x * noiseGen.humidity.scale + 4000, 0, z * noiseGen.humidity.scale + 4000,
+            noiseGen.humidity.octaves, noiseGen.humidity.persistence, 1
+        );
+        
+        const weirdness = this.octaveNoise(
+            x * noiseGen.weirdness.scale + 6000, 0, z * noiseGen.weirdness.scale + 6000,
+            noiseGen.weirdness.octaves, noiseGen.weirdness.persistence, 1
+        );
+        
+        // Store biome factors for smooth transitions
+        const biomeFactors = {
+            continentalness,
+            erosion,
+            peaksAndValleys,
+            temperature,
+            humidity,
+            weirdness
+        };
+        
+        return this.calculateBiomeFromFactors(biomeFactors);
+    }
+    
+    calculateBiomeFromFactors(factors) {
+        const { continentalness, erosion, peaksAndValleys, temperature, humidity, weirdness } = factors;
+        
+        // Minecraft-like biome calculation with smooth transitions
+        const elevation = continentalness + peaksAndValleys * 0.5;
+        
+        // High elevation biomes
+        if (elevation > 0.5) {
+            if (temperature < -0.3) return 'snow_mountain';
+            if (temperature < 0.1) return 'mountain';
+            if (humidity > 0.2) return 'mountain_forest';
+            return 'mountain_plateau';
         }
-        if (elevation < -0.5) {
+        
+        // Low elevation (ocean/river) biomes
+        if (elevation < -0.6) {
+            if (temperature < -0.2) return 'frozen_ocean';
+            return 'ocean';
+        }
+        
+        // Canyon/ravine biomes (high erosion)
+        if (erosion > 0.6) {
+            if (humidity < -0.3) return 'desert_canyon';
             return 'canyon';
         }
-        if (Math.abs(elevation) < 0.1 && humidity > 0.3) {
-            return 'valley';
+        
+        // Weird terrain features
+        if (Math.abs(weirdness) > 0.7) {
+            if (weirdness > 0) return 'mushroom_fields';
+            return 'badlands';
         }
-        if (temperature < -0.3) return 'tundra';
-        if (temperature > 0.4 && humidity < -0.3) return 'desert';
-        if (humidity > 0.4) return 'forest';
-        if (elevation > 0.2) return 'hills';
-        return 'plains';
+        
+        // Standard biomes based on temperature and humidity
+        if (temperature < -0.4) {
+            return humidity > 0.0 ? 'snowy_taiga' : 'tundra';
+        }
+        
+        if (temperature < -0.1) {
+            if (humidity > 0.3) return 'taiga';
+            if (humidity > -0.2) return 'snowy_plains';
+            return 'cold_desert';
+        }
+        
+        if (temperature < 0.3) {
+            if (humidity > 0.4) return 'forest';
+            if (humidity > 0.1) return 'plains';
+            if (humidity > -0.3) return 'savanna';
+            return 'desert';
+        }
+        
+        // Hot biomes
+        if (humidity > 0.3) return 'jungle';
+        if (humidity > 0.0) return 'savanna';
+        if (humidity > -0.4) return 'desert';
+        return 'hot_desert';
+    }
+    
+    getBiomeTransition(x, z, radius = 2) {
+        // Calculate biome transition for smooth color blending
+        const centerBiome = this.getBiome(x, z);
+        const biomeWeights = new Map();
+        biomeWeights.set(centerBiome, 1.0);
+        
+        let totalWeight = 1.0;
+        
+        // Sample surrounding biomes
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                if (dx === 0 && dz === 0) continue;
+                
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance <= radius) {
+                    const biomeSample = this.getBiome(x + dx, z + dz);
+                    const weight = 1.0 - (distance / radius);
+                    
+                    if (biomeWeights.has(biomeSample)) {
+                        biomeWeights.set(biomeSample, biomeWeights.get(biomeSample) + weight);
+                    } else {
+                        biomeWeights.set(biomeSample, weight);
+                    }
+                    totalWeight += weight;
+                }
+            }
+        }
+        
+        // Normalize weights
+        for (const [biome, weight] of biomeWeights) {
+            biomeWeights.set(biome, weight / totalWeight);
+        }
+        
+        return { primaryBiome: centerBiome, biomeWeights };
+    }
+    
+    // ==================== AAA-LEVEL TERRAIN FEATURES ====================
+    
+    generateAdvancedCaveSystem(x, y, z, biome) {
+        // Multi-layer cave generation system
+        const smallCaveNoise = this.octaveNoise(x * 0.08, y * 0.08, z * 0.08, 3, 0.5, 1);
+        const largeCaveNoise = this.octaveNoise(x * 0.02, y * 0.02, z * 0.02, 4, 0.6, 1);
+        const cavernNoise = this.octaveNoise(x * 0.01, y * 0.01, z * 0.01, 5, 0.7, 1);
+        
+        // Tunnel systems
+        const horizontalTunnelNoise = this.octaveNoise(x * 0.05, y * 0.15, z * 0.05, 2, 0.4, 1);
+        const verticalTunnelNoise = this.octaveNoise(x * 0.15, y * 0.05, z * 0.15, 2, 0.4, 1);
+        
+        // Cheese caves (small scattered caves)
+        const cheeseNoise = this.octaveNoise(x * 0.12, y * 0.12, z * 0.12, 2, 0.3, 1);
+        
+        // Natural arch/bridge detection
+        const archNoise = this.octaveNoise(x * 0.03, y * 0.01, z * 0.03, 3, 0.5, 1);
+        
+        let isAir = false;
+        let blockType = 'stone';
+        
+        // Advanced cave logic
+        if (y > 8) { // No caves too close to bedrock
+            // Large caverns
+            if (cavernNoise > 0.75 && y > 15 && y < 50) {
+                isAir = true;
+            }
+            // Medium caves
+            else if (largeCaveNoise > 0.7 && y > 10) {
+                isAir = true;
+            }
+            // Small caves and crevices
+            else if (smallCaveNoise > 0.8) {
+                isAir = true;
+            }
+            // Horizontal tunnel systems
+            else if (horizontalTunnelNoise > 0.85 && Math.abs(y - 25) < 15) {
+                isAir = true;
+            }
+            // Vertical shafts
+            else if (verticalTunnelNoise > 0.9 && y > 5) {
+                isAir = true;
+            }
+            // Cheese caves (small holes)
+            else if (cheeseNoise > 0.9 && y > 12 && y < 40) {
+                isAir = true;
+            }
+        }
+        
+        // Natural arches and overhangs
+        if (!isAir && y > 30 && archNoise > 0.8) {
+            const supportNoise = this.octaveNoise(x * 0.1, y * 0.1, z * 0.1, 2, 0.3, 1);
+            if (supportNoise < -0.3) {
+                isAir = true; // Create arch/overhang
+            }
+        }
+        
+        // If not air, determine block type based on depth and biome
+        if (!isAir) {
+            blockType = this.getUndergroundBlockType(x, y, z, biome);
+        }
+        
+        return { isAir, blockType };
+    }
+    
+    getUndergroundBlockType(x, y, z, biome) {
+        // Enhanced ore and underground block distribution
+        const oreNoise = this.octaveNoise(x * 0.1, y * 0.1, z * 0.1, 2, 0.4, 1);
+        const strataNoise = this.octaveNoise(x * 0.02, y * 0.05, z * 0.02, 3, 0.5, 1);
+        
+        // Geological strata based on depth
+        if (y < 5) {
+            // Deep bedrock layer
+            if (Math.random() < 0.001) return 'diamond';
+            if (oreNoise > 0.8) return 'gold';
+            return 'stone';
+        } else if (y < 12) {
+            // Gold and iron layer
+            if (Math.random() < 0.003) return 'gold';
+            if (Math.random() < 0.008) return 'iron';
+            if (oreNoise > 0.7) return 'coal';
+            return 'stone';
+        } else if (y < 25) {
+            // Iron and coal layer
+            if (Math.random() < 0.012) return 'iron';
+            if (Math.random() < 0.020) return 'coal';
+            if (strataNoise > 0.5) return 'cobblestone';
+            return 'stone';
+        } else if (y < 45) {
+            // Upper stone layer with some variation
+            if (Math.random() < 0.025) return 'coal';
+            if (strataNoise > 0.6) return 'gravel';
+            return 'stone';
+        }
+        
+        // Biome-specific underground blocks
+        switch (biome) {
+            case 'desert':
+            case 'hot_desert':
+                return Math.random() < 0.3 ? 'sandstone' : 'stone';
+            case 'mushroom_fields':
+                return Math.random() < 0.1 ? 'mushroom_block' : 'stone';
+            case 'badlands':
+                return Math.random() < 0.2 ? 'red_sand' : 'stone';
+            default:
+                return 'stone';
+        }
+    }
+    
+    getSurfaceBlockType(biome, y, terrainHeight, x, z) {
+        // Enhanced surface block selection with micro-biome variation
+        const microNoise = this.octaveNoise(x * 0.2, 0, z * 0.2, 2, 0.3, 1);
+        
+        switch (biome) {
+            case 'desert':
+            case 'hot_desert':
+                return Math.random() < 0.1 ? 'sandstone' : 'sand';
+                
+            case 'desert_canyon':
+            case 'canyon':
+                return Math.random() < 0.2 ? 'red_sand' : 'sandstone';
+                
+            case 'snow_mountain':
+                if (y > 45) return 'snow_block';
+                if (y > 35) return 'snow';
+                return 'mountain_stone';
+                
+            case 'mountain':
+            case 'mountain_plateau':
+                if (y > 40) return 'mountain_stone';
+                return microNoise > 0.3 ? 'dark_grass' : 'stone';
+                
+            case 'mountain_forest':
+                return y > 35 ? 'dark_grass' : 'grass';
+                
+            case 'tundra':
+            case 'cold_desert':
+                return microNoise > 0.2 ? 'tundra_grass' : 'snow';
+                
+            case 'snowy_taiga':
+            case 'snowy_plains':
+                return Math.random() < 0.7 ? 'snow' : 'tundra_grass';
+                
+            case 'frozen_ocean':
+                return 'ice';
+                
+            case 'ocean':
+                return 'sand';
+                
+            case 'forest':
+            case 'taiga':
+                return microNoise > 0.1 ? 'grass' : 'dark_grass';
+                
+            case 'jungle':
+                return microNoise > 0.2 ? 'jungle_grass' : 'dirt';
+                
+            case 'plains':
+                return 'grass';
+                
+            case 'savanna':
+                return microNoise > 0.3 ? 'savanna_grass' : 'sand';
+                
+            case 'mushroom_fields':
+                return Math.random() < 0.3 ? 'mushroom_block' : 'dirt';
+                
+            case 'badlands':
+                return Math.random() < 0.4 ? 'red_sand' : 'clay';
+                
+            default:
+                return 'grass';
+        }
     }
     
     generateChunk(chunkX, chunkZ) {
@@ -481,20 +868,13 @@ class MinecraftClone {
                     if (y === 0) {
                         blockType = 'bedrock';
                     } else if (y < terrainHeight - 5) {
-                        // Enhanced cave system with large caverns
-                        const largeCaveNoise = this.octaveNoise(worldX * 0.02, y * 0.02, worldZ * 0.02, 3, 0.6, 1);
-                        const tunnelNoise = this.octaveNoise(worldX * 0.06, y * 0.06, worldZ * 0.06, 2, 0.5, 1);
+                        // AAA-Level: Advanced cave and terrain feature system
+                        const caveResult = this.generateAdvancedCaveSystem(worldX, y, worldZ, biome);
                         
-                        if ((caveNoise > 0.65 && y > 8) || (largeCaveNoise > 0.7 && y > 5) || (tunnelNoise > 0.8)) {
-                            blockType = 'air'; // Caves and tunnels
+                        if (caveResult.isAir) {
+                            blockType = 'air';
                         } else {
-                            blockType = 'stone';
-                            
-                            // Enhanced ore distribution
-                            const oreRandom = Math.random();
-                            if (oreRandom < 0.015 && y < 25) blockType = 'coal';
-                            else if (oreRandom < 0.008 && y < 18) blockType = 'iron';
-                            else if (oreRandom < 0.003 && y < 12) blockType = 'gold';
+                            blockType = caveResult.blockType;
                         }
                     } else if (y < terrainHeight - 1) {
                         switch (biome) {
@@ -510,31 +890,7 @@ class MinecraftClone {
                                 blockType = 'dirt';
                         }
                     } else if (y < terrainHeight) {
-                        switch (biome) {
-                            case 'desert':
-                                blockType = 'sand';
-                                break;
-                            case 'canyon':
-                                blockType = 'red_sand';
-                                break;
-                            case 'snow_mountain':
-                                blockType = y > 30 ? 'snow' : 'mountain_stone';
-                                break;
-                            case 'mountain':
-                                blockType = y > 35 ? 'mountain_stone' : 'dark_grass';
-                                break;
-                            case 'tundra':
-                                blockType = 'tundra_grass';
-                                break;
-                            case 'valley':
-                                blockType = 'dark_grass';
-                                break;
-                            case 'hills':
-                                blockType = 'grass';
-                                break;
-                            default:
-                                blockType = 'grass';
-                        }
+                        blockType = this.getSurfaceBlockType(biome, y, terrainHeight, worldX, worldZ);
                     } else if (y <= this.seaLevel && terrainHeight <= this.seaLevel) {
                         blockType = 'water';
                     }
@@ -542,20 +898,331 @@ class MinecraftClone {
                     chunk.set(blockKey, blockType);
                 }
                 
-                // Enhanced structure generation based on biome
-                if (biome === 'forest' && Math.random() < 0.08 && terrainHeight > this.seaLevel) {
-                    this.generateTreeInChunk(chunk, worldX, terrainHeight, worldZ, biome);
-                } else if (biome === 'desert' && Math.random() < 0.002) {
-                    this.generateCactusInChunk(chunk, worldX, terrainHeight, worldZ);
-                } else if (biome === 'snow_mountain' && Math.random() < 0.001 && terrainHeight > 50) {
-                    this.generateIcePeakInChunk(chunk, worldX, terrainHeight, worldZ);
-                } else if (biome === 'canyon' && Math.random() < 0.003) {
-                    this.generateRockFormationInChunk(chunk, worldX, terrainHeight, worldZ);
-                }
+                // AAA-Level: Advanced vegetation and structure system
+                this.generateVegetationForBiome(chunk, worldX, terrainHeight, worldZ, biome);
             }
         }
         
         return chunk;
+    }
+    
+    // ==================== AAA-LEVEL VEGETATION SYSTEM ====================
+    
+    generateVegetationForBiome(chunk, x, terrainHeight, z, biome) {
+        if (terrainHeight <= this.seaLevel) return; // No vegetation underwater
+        
+        const vegetationNoise = this.octaveNoise(x * 0.1, 0, z * 0.1, 2, 0.4, 1);
+        const densityNoise = this.octaveNoise(x * 0.05, 0, z * 0.05, 3, 0.5, 1);
+        
+        switch (biome) {
+            case 'forest':
+            case 'mountain_forest':
+                if (Math.random() < 0.12) {
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'oak');
+                } else if (Math.random() < 0.05) {
+                    this.generateGrassCluster(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'jungle':
+                if (Math.random() < 0.15) {
+                    this.generateJungleTree(chunk, x, terrainHeight, z);
+                } else if (Math.random() < 0.08) {
+                    this.generateJungleVines(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'taiga':
+            case 'snowy_taiga':
+                if (Math.random() < 0.10) {
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'spruce');
+                }
+                break;
+                
+            case 'desert':
+            case 'hot_desert':
+                if (Math.random() < 0.003) {
+                    this.generateCactus(chunk, x, terrainHeight, z);
+                } else if (Math.random() < 0.01) {
+                    this.generateDeadBush(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'savanna':
+                if (Math.random() < 0.02) {
+                    this.generateAcaciaTree(chunk, x, terrainHeight, z);
+                } else if (Math.random() < 0.15) {
+                    this.generateSavannaGrass(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'plains':
+                if (Math.random() < 0.001) {
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'oak');
+                } else if (Math.random() < 0.20) {
+                    this.generateGrassCluster(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'mushroom_fields':
+                if (Math.random() < 0.08) {
+                    this.generateMushroom(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'tundra':
+            case 'cold_desert':
+                if (Math.random() < 0.02) {
+                    this.generateIceSpike(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'snow_mountain':
+                if (Math.random() < 0.001 && terrainHeight > 50) {
+                    this.generateIcePeak(chunk, x, terrainHeight, z);
+                }
+                break;
+                
+            case 'canyon':
+            case 'badlands':
+                if (Math.random() < 0.003) {
+                    this.generateRockFormation(chunk, x, terrainHeight, z);
+                }
+                break;
+        }
+    }
+    
+    generateForestTree(chunk, x, y, z, treeType = 'oak') {
+        const treeHeight = 5 + Math.floor(Math.random() * 4);
+        const woodType = treeType === 'spruce' ? 'wood' : (treeType === 'birch' ? 'birch_wood' : 'wood');
+        const leafType = treeType === 'spruce' ? 'leaves' : (treeType === 'birch' ? 'birch_leaves' : 'leaves');
+        
+        // Tree trunk
+        for (let i = 0; i < treeHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, woodType);
+            }
+        }
+        
+        // Tree crown - different shapes for different tree types
+        if (treeType === 'spruce') {
+            this.generateSpruceLeaves(chunk, x, y + treeHeight - 1, z, leafType);
+        } else {
+            this.generateOakLeaves(chunk, x, y + treeHeight - 1, z, leafType);
+        }
+    }
+    
+    generateOakLeaves(chunk, x, y, z, leafType) {
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                for (let dy = -1; dy <= 2; dy++) {
+                    const leafX = x + dx;
+                    const leafZ = z + dz;
+                    const leafY = y + dy;
+                    
+                    if (leafY < this.worldHeight) {
+                        const distance = Math.abs(dx) + Math.abs(dz) + Math.abs(dy);
+                        if (distance <= 3 && Math.random() > 0.2) {
+                            const leafKey = `${leafX}_${leafY}_${leafZ}`;
+                            if (!chunk.has(leafKey) || chunk.get(leafKey) === 'air') {
+                                chunk.set(leafKey, leafType);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    generateSpruceLeaves(chunk, x, y, z, leafType) {
+        for (let layer = 0; layer < 4; layer++) {
+            const radius = Math.max(1, 3 - layer);
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dz = -radius; dz <= radius; dz++) {
+                    const leafX = x + dx;
+                    const leafZ = z + dz;
+                    const leafY = y + layer;
+                    
+                    if (leafY < this.worldHeight) {
+                        const distance = Math.abs(dx) + Math.abs(dz);
+                        if (distance <= radius && Math.random() > 0.1) {
+                            const leafKey = `${leafX}_${leafY}_${leafZ}`;
+                            if (!chunk.has(leafKey) || chunk.get(leafKey) === 'air') {
+                                chunk.set(leafKey, leafType);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    generateJungleTree(chunk, x, y, z) {
+        const treeHeight = 8 + Math.floor(Math.random() * 6);
+        
+        // Jungle tree trunk (sometimes larger)
+        const trunkSize = Math.random() < 0.3 ? 2 : 1;
+        
+        for (let i = 0; i < treeHeight; i++) {
+            for (let dx = 0; dx < trunkSize; dx++) {
+                for (let dz = 0; dz < trunkSize; dz++) {
+                    if (y + i < this.worldHeight) {
+                        chunk.set(`${x + dx}_${y + i}_${z + dz}`, 'jungle_wood');
+                    }
+                }
+            }
+        }
+        
+        // Large jungle canopy
+        for (let dx = -3; dx <= 3; dx++) {
+            for (let dz = -3; dz <= 3; dz++) {
+                for (let dy = 0; dy < 4; dy++) {
+                    const leafX = x + dx;
+                    const leafZ = z + dz;
+                    const leafY = y + treeHeight - 2 + dy;
+                    
+                    if (leafY < this.worldHeight) {
+                        const distance = Math.abs(dx) + Math.abs(dz);
+                        if (distance <= 4 && Math.random() > 0.3) {
+                            const leafKey = `${leafX}_${leafY}_${leafZ}`;
+                            if (!chunk.has(leafKey) || chunk.get(leafKey) === 'air') {
+                                chunk.set(leafKey, 'jungle_leaves');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    generateCactus(chunk, x, y, z) {
+        const cactusHeight = 2 + Math.floor(Math.random() * 4);
+        
+        for (let i = 0; i < cactusHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'cactus');
+            }
+        }
+    }
+    
+    generateMushroom(chunk, x, y, z) {
+        const isRedMushroom = Math.random() < 0.5;
+        const mushroomType = isRedMushroom ? 'red_mushroom' : 'mushroom_block';
+        
+        // Mushroom stem
+        for (let i = 0; i < 3; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'mushroom_block');
+            }
+        }
+        
+        // Mushroom cap
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                if (y + 3 < this.worldHeight) {
+                    chunk.set(`${x + dx}_${y + 3}_${z + dz}`, mushroomType);
+                }
+            }
+        }
+    }
+    
+    generateGrassCluster(chunk, x, y, z) {
+        // Small grass clusters
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                if (Math.random() < 0.7 && y + 1 < this.worldHeight) {
+                    const grassKey = `${x + dx}_${y + 1}_${z + dz}`;
+                    if (!chunk.has(grassKey) || chunk.get(grassKey) === 'air') {
+                        chunk.set(grassKey, 'grass');
+                    }
+                }
+            }
+        }
+    }
+    
+    generateDeadBush(chunk, x, y, z) {
+        if (y + 1 < this.worldHeight) {
+            chunk.set(`${x}_${y + 1}_${z}`, 'dead_bush');
+        }
+    }
+    
+    generateAcaciaTree(chunk, x, y, z) {
+        const treeHeight = 4 + Math.floor(Math.random() * 3);
+        
+        // Acacia trunk
+        for (let i = 0; i < treeHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'wood');
+            }
+        }
+        
+        // Flat acacia canopy
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                if (y + treeHeight < this.worldHeight && Math.random() > 0.2) {
+                    const leafKey = `${x + dx}_${y + treeHeight}_${z + dz}`;
+                    if (!chunk.has(leafKey) || chunk.get(leafKey) === 'air') {
+                        chunk.set(leafKey, 'leaves');
+                    }
+                }
+            }
+        }
+    }
+    
+    generateSavannaGrass(chunk, x, y, z) {
+        if (y + 1 < this.worldHeight) {
+            chunk.set(`${x}_${y + 1}_${z}`, 'savanna_grass');
+        }
+    }
+    
+    generateJungleVines(chunk, x, y, z) {
+        const vineLength = 2 + Math.floor(Math.random() * 4);
+        
+        for (let i = 0; i < vineLength; i++) {
+            if (y - i >= 0) {
+                chunk.set(`${x}_${y - i}_${z}`, 'jungle_leaves');
+            }
+        }
+    }
+    
+    generateIceSpike(chunk, x, y, z) {
+        const spikeHeight = 3 + Math.floor(Math.random() * 5);
+        
+        for (let i = 0; i < spikeHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'packed_ice');
+            }
+        }
+    }
+    
+    generateIcePeak(chunk, x, y, z) {
+        const peakHeight = 6 + Math.floor(Math.random() * 8);
+        
+        for (let i = 0; i < peakHeight; i++) {
+            const radius = Math.max(0, Math.floor((peakHeight - i) / 2));
+            for (let dx = -radius; dx <= radius; dx++) {
+                for (let dz = -radius; dz <= radius; dz++) {
+                    if (y + i < this.worldHeight && Math.random() > 0.2) {
+                        chunk.set(`${x + dx}_${y + i}_${z + dz}`, 'packed_ice');
+                    }
+                }
+            }
+        }
+    }
+    
+    generateRockFormation(chunk, x, y, z) {
+        const formationHeight = 3 + Math.floor(Math.random() * 6);
+        
+        for (let i = 0; i < formationHeight; i++) {
+            const width = Math.max(1, 3 - Math.floor(i / 2));
+            for (let dx = -width; dx <= width; dx++) {
+                for (let dz = -width; dz <= width; dz++) {
+                    if (y + i < this.worldHeight && Math.random() > 0.3) {
+                        chunk.set(`${x + dx}_${y + i}_${z + dz}`, 'mountain_stone');
+                    }
+                }
+            }
+        }
     }
     
     generateTreeInChunk(chunk, x, y, z, biome) {
@@ -624,6 +1291,404 @@ class MinecraftClone {
                 }
             }
         }
+    }
+    
+    // ==================== AAA-LEVEL ATMOSPHERIC SYSTEM ====================
+    
+    initializeAtmosphericSystem() {
+        this.createDynamicSkybox();
+        this.createVolumetricClouds();
+        this.updateAtmosphericLighting();
+    }
+    
+    createDynamicSkybox() {
+        // Create gradient skybox that changes with time
+        const skyGeometry = new THREE.SphereGeometry(800, 32, 32);
+        const skyMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                topColor: { value: new THREE.Color(0x0077ff) },
+                bottomColor: { value: new THREE.Color(0xffffff) },
+                offset: { value: 33 },
+                exponent: { value: 0.6 },
+                timeOfDay: { value: this.atmosphericSystem.timeOfDay }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                void main() {
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec3 topColor;
+                uniform vec3 bottomColor;
+                uniform float offset;
+                uniform float exponent;
+                uniform float timeOfDay;
+                varying vec3 vWorldPosition;
+                
+                void main() {
+                    float h = normalize(vWorldPosition + offset).y;
+                    
+                    // Day/night color transitions
+                    vec3 dayTop = vec3(0.2, 0.5, 1.0);
+                    vec3 dayBottom = vec3(0.8, 0.9, 1.0);
+                    vec3 nightTop = vec3(0.01, 0.01, 0.08);
+                    vec3 nightBottom = vec3(0.2, 0.1, 0.4);
+                    vec3 sunsetTop = vec3(0.8, 0.3, 0.1);
+                    vec3 sunsetBottom = vec3(1.0, 0.8, 0.4);
+                    
+                    vec3 currentTop, currentBottom;
+                    
+                    if (timeOfDay < 0.2) {
+                        // Night
+                        currentTop = nightTop;
+                        currentBottom = nightBottom;
+                    } else if (timeOfDay < 0.3) {
+                        // Sunrise
+                        float t = (timeOfDay - 0.2) / 0.1;
+                        currentTop = mix(nightTop, sunsetTop, t);
+                        currentBottom = mix(nightBottom, sunsetBottom, t);
+                    } else if (timeOfDay < 0.7) {
+                        // Day
+                        float t = (timeOfDay - 0.3) / 0.4;
+                        currentTop = mix(sunsetTop, dayTop, t);
+                        currentBottom = mix(sunsetBottom, dayBottom, t);
+                    } else if (timeOfDay < 0.8) {
+                        // Sunset
+                        float t = (timeOfDay - 0.7) / 0.1;
+                        currentTop = mix(dayTop, sunsetTop, t);
+                        currentBottom = mix(dayBottom, sunsetBottom, t);
+                    } else {
+                        // Night again
+                        float t = (timeOfDay - 0.8) / 0.2;
+                        currentTop = mix(sunsetTop, nightTop, t);
+                        currentBottom = mix(sunsetBottom, nightBottom, t);
+                    }
+                    
+                    gl_FragColor = vec4(mix(currentBottom, currentTop, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+                }
+            `,
+            side: THREE.BackSide
+        });
+        
+        this.atmosphericSystem.skybox = new THREE.Mesh(skyGeometry, skyMaterial);
+        this.scene.add(this.atmosphericSystem.skybox);
+    }
+    
+    createVolumetricClouds() {
+        // Create realistic cloud formations
+        const cloudCount = 50;
+        this.atmosphericSystem.clouds = [];
+        
+        // Cloud geometry - optimized for performance
+        const cloudGeometry = new THREE.SphereGeometry(8, 8, 8);
+        
+        // Cloud material with transparency and movement
+        const cloudMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                opacity: { value: 0.6 },
+                cloudColor: { value: new THREE.Color(0xffffff) },
+                shadowColor: { value: new THREE.Color(0x888888) }
+            },
+            vertexShader: `
+                uniform float time;
+                varying vec3 vPosition;
+                varying float vDistance;
+                
+                void main() {
+                    vPosition = position;
+                    
+                    // Add subtle cloud movement and deformation
+                    vec3 deformed = position;
+                    deformed.x += sin(time * 0.5 + position.y * 0.1) * 0.5;
+                    deformed.z += cos(time * 0.3 + position.x * 0.1) * 0.3;
+                    
+                    vec4 worldPosition = modelMatrix * vec4(deformed, 1.0);
+                    vDistance = length(worldPosition.xyz - cameraPosition);
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(deformed, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform float opacity;
+                uniform vec3 cloudColor;
+                uniform vec3 shadowColor;
+                varying vec3 vPosition;
+                varying float vDistance;
+                
+                void main() {
+                    // Create realistic cloud density
+                    float noise = sin(vPosition.x * 0.5) * cos(vPosition.z * 0.3) * sin(vPosition.y * 0.8);
+                    float density = smoothstep(-0.3, 0.3, noise + sin(time * 0.1) * 0.2);
+                    
+                    // Distance-based opacity for performance
+                    float distanceFade = 1.0 - smoothstep(100.0, 200.0, vDistance);
+                    
+                    vec3 finalColor = mix(shadowColor, cloudColor, density);
+                    gl_FragColor = vec4(finalColor, opacity * density * distanceFade);
+                }
+            `,
+            transparent: true,
+            depthWrite: false
+        });
+        
+        this.atmosphericSystem.cloudGeometry = cloudGeometry;
+        this.atmosphericSystem.cloudMaterial = cloudMaterial;
+        
+        // Generate cloud formations
+        for (let i = 0; i < cloudCount; i++) {
+            const cloud = new THREE.Mesh(cloudGeometry, cloudMaterial);
+            
+            // Position clouds at various heights
+            cloud.position.set(
+                (Math.random() - 0.5) * 800,
+                60 + Math.random() * 40,
+                (Math.random() - 0.5) * 800
+            );
+            
+            // Random cloud scale for variety
+            const scale = 1 + Math.random() * 2;
+            cloud.scale.set(scale, scale * 0.5, scale);
+            
+            // Random rotation
+            cloud.rotation.y = Math.random() * Math.PI * 2;
+            
+            this.atmosphericSystem.clouds.push(cloud);
+            this.scene.add(cloud);
+        }
+    }
+    
+    updateSkyColor() {
+        // Dynamic sky color based on time and weather
+        const timeOfDay = this.atmosphericSystem.timeOfDay;
+        let skyColor, fogColor;
+        
+        if (timeOfDay < 0.2) {
+            // Night
+            skyColor = new THREE.Color(0x191970);
+            fogColor = new THREE.Color(0x2F2F4F);
+        } else if (timeOfDay < 0.3) {
+            // Sunrise
+            skyColor = new THREE.Color(0xFF6347);
+            fogColor = new THREE.Color(0xFF8C69);
+        } else if (timeOfDay < 0.7) {
+            // Day
+            skyColor = new THREE.Color(0x87CEEB);
+            fogColor = new THREE.Color(0xB0C4DE);
+        } else if (timeOfDay < 0.8) {
+            // Sunset
+            skyColor = new THREE.Color(0xFF4500);
+            fogColor = new THREE.Color(0xFF6347);
+        } else {
+            // Evening
+            skyColor = new THREE.Color(0x4B0082);
+            fogColor = new THREE.Color(0x483D8B);
+        }
+        
+        this.scene.background = skyColor;
+        this.scene.fog = new THREE.Fog(fogColor, 50, 250);
+    }
+    
+    updateAtmosphericLighting() {
+        if (this.directionalLight) {
+            const timeOfDay = this.atmosphericSystem.timeOfDay;
+            
+            // Sun position based on time
+            const sunAngle = (timeOfDay - 0.5) * Math.PI;
+            this.directionalLight.position.set(
+                Math.sin(sunAngle) * 100,
+                Math.cos(sunAngle) * 100,
+                50
+            );
+            
+            // Light intensity based on time
+            let intensity = Math.max(0.1, Math.cos(sunAngle));
+            this.directionalLight.intensity = intensity;
+            
+            // Light color changes
+            if (timeOfDay < 0.3 || timeOfDay > 0.7) {
+                this.directionalLight.color.setHex(0xFFB366); // Warm light
+            } else {
+                this.directionalLight.color.setHex(0xFFFFFF); // White light
+            }
+        }
+    }
+    
+    initializeWeatherSystem() {
+        this.atmosphericSystem.weatherSystem = {
+            rainParticles: [],
+            snowParticles: [],
+            weatherType: 'clear', // 'clear', 'rain', 'snow', 'storm'
+            intensity: 0.0,
+            windDirection: new THREE.Vector3(1, 0, 0.5).normalize(),
+            windStrength: 0.5
+        };
+    }
+    
+    initializeParticleSystem() {
+        // AAA-Level: Advanced biome-specific particle system
+        this.atmosphericSystem.particleSystems = {
+            snow: this.createSnowParticles(),
+            rain: this.createRainParticles(),
+            leaves: this.createLeafParticles(),
+            dust: this.createDustParticles(),
+            ash: this.createAshParticles()
+        };
+        
+        // Add all systems to scene but initially hide them
+        Object.values(this.atmosphericSystem.particleSystems).forEach(system => {
+            system.visible = false;
+            this.scene.add(system);
+        });
+    }
+    
+    createSnowParticles() {
+        const particleCount = 500;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 200;
+            positions[i + 1] = Math.random() * 100 + 50;
+            positions[i + 2] = (Math.random() - 0.5) * 200;
+            
+            velocities[i] = (Math.random() - 0.5) * 0.02;
+            velocities[i + 1] = -Math.random() * 0.2 - 0.05;
+            velocities[i + 2] = (Math.random() - 0.5) * 0.02;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        
+        const material = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 1.0,
+            transparent: true,
+            opacity: 0.9
+        });
+        
+        return new THREE.Points(particles, material);
+    }
+    
+    createRainParticles() {
+        const particleCount = 800;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 200;
+            positions[i + 1] = Math.random() * 100 + 50;
+            positions[i + 2] = (Math.random() - 0.5) * 200;
+            
+            velocities[i] = (Math.random() - 0.5) * 0.1;
+            velocities[i + 1] = -Math.random() * 2.0 - 1.0;
+            velocities[i + 2] = (Math.random() - 0.5) * 0.1;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        
+        const material = new THREE.PointsMaterial({
+            color: 0x87ceeb,
+            size: 0.3,
+            transparent: true,
+            opacity: 0.7
+        });
+        
+        return new THREE.Points(particles, material);
+    }
+    
+    createLeafParticles() {
+        const particleCount = 300;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 150;
+            positions[i + 1] = Math.random() * 80 + 20;
+            positions[i + 2] = (Math.random() - 0.5) * 150;
+            
+            velocities[i] = (Math.random() - 0.5) * 0.3;
+            velocities[i + 1] = -Math.random() * 0.1 - 0.02;
+            velocities[i + 2] = (Math.random() - 0.5) * 0.3;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        
+        const material = new THREE.PointsMaterial({
+            color: 0x8b4513,
+            size: 1.5,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        return new THREE.Points(particles, material);
+    }
+    
+    createDustParticles() {
+        const particleCount = 200;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 100;
+            positions[i + 1] = Math.random() * 40 + 10;
+            positions[i + 2] = (Math.random() - 0.5) * 100;
+            
+            velocities[i] = (Math.random() - 0.5) * 0.05;
+            velocities[i + 1] = Math.random() * 0.05;
+            velocities[i + 2] = (Math.random() - 0.5) * 0.05;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        
+        const material = new THREE.PointsMaterial({
+            color: 0xdeb887,
+            size: 0.8,
+            transparent: true,
+            opacity: 0.5
+        });
+        
+        return new THREE.Points(particles, material);
+    }
+    
+    createAshParticles() {
+        const particleCount = 400;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const velocities = new Float32Array(particleCount * 3);
+        
+        for (let i = 0; i < particleCount * 3; i += 3) {
+            positions[i] = (Math.random() - 0.5) * 180;
+            positions[i + 1] = Math.random() * 90 + 30;
+            positions[i + 2] = (Math.random() - 0.5) * 180;
+            
+            velocities[i] = (Math.random() - 0.5) * 0.1;
+            velocities[i + 1] = Math.random() * 0.2 + 0.05;
+            velocities[i + 2] = (Math.random() - 0.5) * 0.1;
+        }
+        
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
+        
+        const material = new THREE.PointsMaterial({
+            color: 0x696969,
+            size: 0.6,
+            transparent: true,
+            opacity: 0.6
+        });
+        
+        return new THREE.Points(particles, material);
     }
     
     generateTree(x, y, z) {
@@ -1044,13 +2109,143 @@ class MinecraftClone {
     initializeMaterials() {
         Object.keys(this.blockTypes).forEach(blockType => {
             if (blockType !== 'air') {
-                this.blockMaterials[blockType] = new THREE.MeshLambertMaterial({
-                    color: this.blockTypes[blockType].color
-                });
+                // Special water shader for realistic water effects
+                if (blockType === 'water') {
+                    this.blockMaterials[blockType] = this.createWaterMaterial();
+                } else if (blockType === 'ice' || blockType === 'packed_ice') {
+                    this.blockMaterials[blockType] = this.createIceMaterial(blockType);
+                } else {
+                    this.blockMaterials[blockType] = new THREE.MeshLambertMaterial({
+                        color: this.blockTypes[blockType].color
+                    });
+                }
                 
                 // Initialize instanced mesh for each block type
                 this.initInstancedMesh(blockType);
             }
+        });
+    }
+    
+    createWaterMaterial() {
+        // AAA-Level Water Shader with reflections and waves
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                waterColor: { value: new THREE.Color(0x006994) },
+                deepWaterColor: { value: new THREE.Color(0x002642) },
+                surfaceColor: { value: new THREE.Color(0x7dd3fc) },
+                reflectionStrength: { value: 0.3 },
+                waveSpeed: { value: 1.0 },
+                waveHeight: { value: 0.1 },
+                transparency: { value: 0.7 }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform float waveSpeed;
+                uniform float waveHeight;
+                varying vec3 vWorldPosition;
+                varying vec3 vNormal;
+                varying float vWaveHeight;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    
+                    vec3 pos = position;
+                    
+                    // Create realistic water waves
+                    float wave1 = sin(pos.x * 0.5 + time * waveSpeed) * waveHeight;
+                    float wave2 = sin(pos.z * 0.3 + time * waveSpeed * 0.7) * waveHeight * 0.5;
+                    float wave3 = sin((pos.x + pos.z) * 0.2 + time * waveSpeed * 1.3) * waveHeight * 0.3;
+                    
+                    pos.y += wave1 + wave2 + wave3;
+                    vWaveHeight = wave1 + wave2 + wave3;
+                    
+                    vec4 worldPosition = modelMatrix * vec4(pos, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 waterColor;
+                uniform vec3 deepWaterColor;
+                uniform vec3 surfaceColor;
+                uniform float reflectionStrength;
+                uniform float transparency;
+                
+                varying vec3 vWorldPosition;
+                varying vec3 vNormal;
+                varying float vWaveHeight;
+                
+                void main() {
+                    // Calculate water depth effect
+                    float depth = smoothstep(0.0, 2.0, vWorldPosition.y);
+                    vec3 baseColor = mix(deepWaterColor, waterColor, depth);
+                    
+                    // Add surface reflection effect
+                    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+                    float fresnel = pow(1.0 - max(dot(viewDirection, vNormal), 0.0), 2.0);
+                    
+                    // Animate surface patterns
+                    float pattern = sin(vWorldPosition.x * 0.1 + time * 0.5) * sin(vWorldPosition.z * 0.1 + time * 0.3);
+                    pattern = pattern * 0.5 + 0.5;
+                    
+                    vec3 finalColor = mix(baseColor, surfaceColor, fresnel * reflectionStrength);
+                    finalColor = mix(finalColor, surfaceColor, pattern * 0.2);
+                    
+                    // Add wave foam
+                    float foam = smoothstep(0.05, 0.1, abs(vWaveHeight));
+                    finalColor = mix(finalColor, vec3(1.0), foam * 0.3);
+                    
+                    gl_FragColor = vec4(finalColor, transparency);
+                }
+            `,
+            transparent: true,
+            side: THREE.DoubleSide
+        });
+    }
+    
+    createIceMaterial(blockType) {
+        // Enhanced ice material with transparency and reflections
+        const baseColor = this.blockTypes[blockType].color;
+        
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                baseColor: { value: new THREE.Color(baseColor) },
+                reflectionStrength: { value: 0.2 }
+            },
+            vertexShader: `
+                varying vec3 vWorldPosition;
+                varying vec3 vNormal;
+                
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+                    vWorldPosition = worldPosition.xyz;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 baseColor;
+                uniform float reflectionStrength;
+                
+                varying vec3 vWorldPosition;
+                varying vec3 vNormal;
+                
+                void main() {
+                    vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+                    float fresnel = pow(1.0 - max(dot(viewDirection, vNormal), 0.0), 3.0);
+                    
+                    vec3 finalColor = mix(baseColor, vec3(1.0), fresnel * reflectionStrength);
+                    
+                    gl_FragColor = vec4(finalColor, 0.8);
+                }
+            `,
+            transparent: true
         });
     }
     
@@ -1151,6 +2346,136 @@ class MinecraftClone {
         this.updateMovement();
         this.updateCamera();
         this.updateUI();
+        this.updateAtmosphericEffects();
+    }
+    
+    updateAtmosphericEffects() {
+        const time = performance.now() * 0.0001;
+        
+        // Update time of day (cycles every ~10 minutes for demo)
+        this.atmosphericSystem.timeOfDay = (time * 0.01) % 1.0;
+        
+        // Update skybox
+        if (this.atmosphericSystem.skybox) {
+            this.atmosphericSystem.skybox.material.uniforms.timeOfDay.value = this.atmosphericSystem.timeOfDay;
+        }
+        
+        // Update sky colors and lighting
+        this.updateSkyColor();
+        this.updateAtmosphericLighting();
+        
+        // Update clouds
+        if (this.atmosphericSystem.cloudMaterial) {
+            this.atmosphericSystem.cloudMaterial.uniforms.time.value = time;
+        }
+        
+        // Move clouds slowly
+        for (const cloud of this.atmosphericSystem.clouds) {
+            cloud.position.x += 0.01;
+            if (cloud.position.x > 400) {
+                cloud.position.x = -400;
+            }
+        }
+        
+        // Update water and ice shaders
+        if (this.blockMaterials.water && this.blockMaterials.water.uniforms) {
+            this.blockMaterials.water.uniforms.time.value = time * 5; // Faster water animation
+        }
+        
+        if (this.blockMaterials.ice && this.blockMaterials.ice.uniforms) {
+            this.blockMaterials.ice.uniforms.time.value = time;
+        }
+        
+        if (this.blockMaterials.packed_ice && this.blockMaterials.packed_ice.uniforms) {
+            this.blockMaterials.packed_ice.uniforms.time.value = time;
+        }
+        
+        // AAA-Level: Update biome-specific particles
+        this.updateBiomeParticles();
+    }
+    
+    updateBiomeParticles() {
+        const playerX = Math.floor(this.camera.position.x);
+        const playerZ = Math.floor(this.camera.position.z);
+        const currentBiome = this.getBiome(playerX, playerZ);
+        
+        // Hide all particle systems first
+        Object.values(this.atmosphericSystem.particleSystems).forEach(system => {
+            system.visible = false;
+        });
+        
+        // Show appropriate particle system based on biome and conditions
+        let activeParticleSystem = null;
+        
+        switch (currentBiome) {
+            case 'snow_mountain':
+            case 'snowy_taiga':
+            case 'snowy_plains':
+            case 'tundra':
+                activeParticleSystem = this.atmosphericSystem.particleSystems.snow;
+                break;
+                
+            case 'forest':
+            case 'jungle':
+            case 'taiga':
+                if (Math.random() < 0.3) { // Occasional leaf particles
+                    activeParticleSystem = this.atmosphericSystem.particleSystems.leaves;
+                }
+                break;
+                
+            case 'desert':
+            case 'hot_desert':
+            case 'savanna':
+                activeParticleSystem = this.atmosphericSystem.particleSystems.dust;
+                break;
+                
+            case 'badlands':
+            case 'canyon':
+                if (Math.random() < 0.5) {
+                    activeParticleSystem = this.atmosphericSystem.particleSystems.ash;
+                }
+                break;
+        }
+        
+        // Randomly trigger rain in appropriate biomes
+        if (!activeParticleSystem && Math.random() < 0.1) {
+            if (['forest', 'plains', 'jungle', 'taiga'].includes(currentBiome)) {
+                activeParticleSystem = this.atmosphericSystem.particleSystems.rain;
+            }
+        }
+        
+        // Update active particle system
+        if (activeParticleSystem) {
+            activeParticleSystem.visible = true;
+            this.updateParticleSystem(activeParticleSystem);
+        }
+    }
+    
+    updateParticleSystem(particleSystem) {
+        const positions = particleSystem.geometry.attributes.position.array;
+        const velocities = particleSystem.geometry.attributes.velocity.array;
+        const playerPos = this.camera.position;
+        
+        for (let i = 0; i < positions.length; i += 3) {
+            positions[i] += velocities[i];
+            positions[i + 1] += velocities[i + 1];
+            positions[i + 2] += velocities[i + 2];
+            
+            // Reset particle if it goes out of bounds
+            const dx = positions[i] - playerPos.x;
+            const dy = positions[i + 1];
+            const dz = positions[i + 2] - playerPos.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            
+            if (dy < 0 || distance > 100) {
+                // Respawn particle near player
+                positions[i] = playerPos.x + (Math.random() - 0.5) * 100;
+                positions[i + 1] = playerPos.y + Math.random() * 50 + 20;
+                positions[i + 2] = playerPos.z + (Math.random() - 0.5) * 100;
+            }
+        }
+        
+        particleSystem.geometry.attributes.position.needsUpdate = true;
     }
     
     updateMovement() {
@@ -1303,8 +2628,17 @@ class MinecraftClone {
     updateUI() {
         const pos = this.camera.position;
         const flightStatus = this.isFlying ? ' ✈️ FLYING' : '';
+        const timeOfDayText = this.getTimeOfDayText();
+        
         document.getElementById('position').textContent = 
-            `Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}${flightStatus}`;
+            `Position: ${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)}${flightStatus} | ${timeOfDayText}`;
+        
+        // Update biome information
+        const currentBiome = this.getBiome(Math.floor(pos.x), Math.floor(pos.z));
+        document.getElementById('biome').textContent = `Biome: ${this.formatBiomeName(currentBiome)}`;
+        
+        // Update seed information
+        document.getElementById('seed').textContent = `Seed: ${this.worldSeed}`;
         
         this.frameCount++;
         const currentTime = performance.now();
@@ -1326,6 +2660,45 @@ class MinecraftClone {
             this.frameCount = 0;
             this.lastTime = currentTime;
         }
+    }
+    
+    getTimeOfDayText() {
+        const timeOfDay = this.atmosphericSystem.timeOfDay;
+        
+        if (timeOfDay < 0.2) return '🌙 Night';
+        if (timeOfDay < 0.3) return '🌅 Sunrise';
+        if (timeOfDay < 0.7) return '☀️ Day';
+        if (timeOfDay < 0.8) return '🌇 Sunset';
+        return '🌃 Evening';
+    }
+    
+    formatBiomeName(biome) {
+        // Convert biome names to readable format
+        const biomeNames = {
+            'forest': 'Forest',
+            'jungle': 'Jungle',
+            'desert': 'Desert',
+            'hot_desert': 'Hot Desert',
+            'snow_mountain': 'Snowy Mountains',
+            'mountain': 'Mountains',
+            'mountain_forest': 'Mountain Forest',
+            'mountain_plateau': 'Mountain Plateau',
+            'tundra': 'Tundra',
+            'cold_desert': 'Cold Desert',
+            'snowy_taiga': 'Snowy Taiga',
+            'snowy_plains': 'Snowy Plains',
+            'frozen_ocean': 'Frozen Ocean',
+            'ocean': 'Ocean',
+            'taiga': 'Taiga',
+            'plains': 'Plains',
+            'savanna': 'Savanna',
+            'mushroom_fields': 'Mushroom Fields',
+            'badlands': 'Badlands',
+            'canyon': 'Canyon',
+            'desert_canyon': 'Desert Canyon'
+        };
+        
+        return biomeNames[biome] || biome.charAt(0).toUpperCase() + biome.slice(1);
     }
     
     getTargetBlock() {
