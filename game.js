@@ -401,24 +401,10 @@ class MinecraftClone {
         console.log(`Loaded chunks: ${this.loadedChunks.size}`);
     }
     
-    // 🧮 TERRAIN HEIGHT CALCULATOR - For emergency spawn fallback
+    // Simple terrain height calculator for emergency spawn fallback
     calculateExpectedTerrainHeight(worldX, worldZ) {
-        // Replicate the same height calculation used in terrain generation
-        const continentalScale = this.octaveNoise(worldX * 0.001, 0, worldZ * 0.001, 8, 0.7, 1) * 0.5 + 0.5;
-        const mountainRange = this.generateMountainRidges(worldX, worldZ);
-        const valleySystem = this.generateValleySystems(worldX, worldZ);
-        const localTerrain = this.generateLocalTerrain(worldX, worldZ);
-        
-        let baseHeight = this.seaLevel;
-        baseHeight += continentalScale * 25;
-        baseHeight += mountainRange.elevation;
-        baseHeight -= valleySystem.depth;
-        baseHeight += localTerrain * Math.min(5, mountainRange.influence);
-        
-        // Apply same constraints as in generateIntelligentHeightMap
-        baseHeight = Math.max(this.seaLevel - 10, Math.min(this.worldHeight - 20, baseHeight));
-        
-        return Math.floor(baseHeight);
+        // Use the same simple calculation as the new terrain generation
+        return this.getSimpleTerrainHeight(worldX, worldZ);
     }
     
     initializePerlinNoise() {
@@ -855,51 +841,100 @@ class MinecraftClone {
     }
     
     generateChunk(chunkX, chunkZ) {
-        const chunkKey = `${chunkX}_${chunkZ}`;
         const chunk = new Map();
         
         const startX = chunkX * this.chunkSize;
         const startZ = chunkZ * this.chunkSize;
         
-        // 🧠 PHASE 1: INTELLIGENT TERRAIN ANALYSIS - Generate height map with geological coherence
-        const heightMap = this.generateIntelligentHeightMap(startX, startZ);
-        const erosionMap = this.calculateErosionPatterns(heightMap, startX, startZ);
-        const riverMap = this.generateRiverNetworks(heightMap, erosionMap, startX, startZ);
-        const supportMap = this.calculateSupportStructure(heightMap);
-        
-        // 🧠 PHASE 2: COHERENT TERRAIN GENERATION
+        // Simple, continuous terrain generation - similar to reference implementation
         for (let x = 0; x < this.chunkSize; x++) {
             for (let z = 0; z < this.chunkSize; z++) {
                 const worldX = startX + x;
                 const worldZ = startZ + z;
                 
-                const biome = this.getBiome(worldX, worldZ);
-                const terrainHeight = heightMap[x][z];
-                const erosionLevel = erosionMap[x][z];
-                const isRiver = riverMap[x][z];
-                const supportLevel = supportMap[x][z];
+                // Simple height calculation using global coordinates for continuity
+                const height = this.getSimpleTerrainHeight(worldX, worldZ);
+                const biome = this.getSimpleBiome(worldX, worldZ);
                 
-                // 🧠 PHASE 3: GEOLOGICAL COLUMN GENERATION with PHYSICS-BASED SUPPORT
-                this.generateGeologicalColumn(chunk, worldX, worldZ, terrainHeight, biome, 
-                                            erosionLevel, isRiver, supportLevel);
+                // Generate terrain column
+                this.generateSimpleTerrainColumn(chunk, worldX, worldZ, height, biome);
             }
         }
         
-        // 🔧 PHASE 4: TERRAIN CONTINUITY VALIDATION
-        this.ensureTerrainContinuity(chunk, heightMap, startX, startZ);
-        
-        // 🧠 PHASE 5: POST-PROCESSING for NATURAL FEATURES
-        this.applyNaturalFeatures(chunk, heightMap, riverMap, startX, startZ);
-        this.addCoherentVegetation(chunk, heightMap, startX, startZ);
-        this.addGeologicalStructures(chunk, heightMap, supportMap, startX, startZ);
-        
-        // 🚀 PHASE 6: SIMPLIFIED ANTI-FLOATING-BLOCK POST-PROCESSING
-        this.applyUltimateAntiFloatingBlockSystem(chunk, heightMap, supportMap, startX, startZ);
-        
-        // 🧹 PHASE 7: FINAL TERRAIN CLEANUP & VALIDATION
-        this.performFinalTerrainCleanup(chunk, heightMap, startX, startZ);
-        
         return chunk;
+    }
+    
+    // Simple terrain generation methods inspired by reference implementation
+    getSimpleTerrainHeight(worldX, worldZ) {
+        // Base terrain using simple noise layers
+        const baseHeight = this.seaLevel + 
+                          this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 4, 0.5, 1) * 15 +
+                          this.octaveNoise(worldX * 0.05, 0, worldZ * 0.05, 2, 0.3, 1) * 5;
+        
+        return Math.floor(Math.max(this.seaLevel, Math.min(this.worldHeight - 10, baseHeight)));
+    }
+    
+    getSimpleBiome(worldX, worldZ) {
+        const temperature = this.octaveNoise(worldX * 0.005, 0, worldZ * 0.005, 3, 0.5, 1);
+        const humidity = this.octaveNoise(worldX * 0.005, 100, worldZ * 0.005, 3, 0.5, 1);
+        
+        if (temperature < -0.3) return 'tundra';
+        if (temperature > 0.4 && humidity < -0.2) return 'desert';
+        if (humidity > 0.3) return 'jungle';
+        return 'plains';
+    }
+    
+    generateSimpleTerrainColumn(chunk, worldX, worldZ, height, biome) {
+        for (let y = 0; y <= height; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            let blockType;
+            
+            if (y === height) {
+                // Surface block based on biome
+                switch (biome) {
+                    case 'desert': blockType = 'sand'; break;
+                    case 'tundra': blockType = 'snow'; break;
+                    case 'jungle': blockType = 'jungle_grass'; break;
+                    default: blockType = 'grass';
+                }
+            } else if (y >= height - 3) {
+                // Subsurface layer
+                blockType = biome === 'desert' ? 'sandstone' : 'dirt';
+            } else {
+                // Deep stone
+                blockType = 'stone';
+            }
+            
+            chunk.set(blockKey, blockType);
+        }
+        
+        // Add simple vegetation
+        if (Math.random() < 0.02 && biome !== 'desert') {
+            this.addSimpleTree(chunk, worldX, worldZ, height, biome);
+        }
+    }
+    
+    addSimpleTree(chunk, worldX, worldZ, groundHeight, biome) {
+        const treeHeight = 4 + Math.floor(Math.random() * 3);
+        const woodType = biome === 'jungle' ? 'jungle_wood' : 'wood';
+        const leafType = biome === 'jungle' ? 'jungle_leaves' : 'leaves';
+        
+        // Tree trunk
+        for (let y = groundHeight + 1; y < groundHeight + treeHeight; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            chunk.set(blockKey, woodType);
+        }
+        
+        // Simple leaf crown
+        const leafY = groundHeight + treeHeight;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                if (Math.abs(dx) + Math.abs(dz) <= 2) {
+                    const leafKey = `${worldX + dx}_${leafY}_${worldZ + dz}`;
+                    chunk.set(leafKey, leafType);
+                }
+            }
+        }
     }
     
     // ========== 🔧 TERRAIN CONTINUITY VALIDATION ==========
