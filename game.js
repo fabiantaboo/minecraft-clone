@@ -309,55 +309,85 @@ class MinecraftClone {
     }
     
     findSafeSpawnPosition() {
+        // 🚨 CRITICAL SPAWN FIX - Anti-Sky-Spawn System
         const spawnX = 8;
         const spawnZ = 8;
         
         const spawnChunkX = Math.floor(spawnX / this.chunkSize);
         const spawnChunkZ = Math.floor(spawnZ / this.chunkSize);
         
-        console.log(`Generating spawn chunk at: ${spawnChunkX}, ${spawnChunkZ}`);
+        console.log(`🚀 SAFE SPAWN SYSTEM: Generating spawn chunk at: ${spawnChunkX}, ${spawnChunkZ}`);
         const spawnChunk = this.generateChunk(spawnChunkX, spawnChunkZ);
         this.world.set(`${spawnChunkX}_${spawnChunkZ}`, spawnChunk);
         
-        console.log(`Chunk size: ${spawnChunk.size} blocks`);
+        console.log(`Chunk generated with ${spawnChunk.size} blocks`);
         
-        // Debug: Zeige Terrain-Informationen für Spawn-Position
-        const spawnBiome = this.getBiome(spawnX, spawnZ);
-        const spawnHeightNoise = (this.octaveNoise(spawnX * 0.01, 0, spawnZ * 0.01, 6, 0.6, 1) + 1) / 2;
-        console.log(`Spawn biome: ${spawnBiome}, height noise: ${spawnHeightNoise.toFixed(3)}`);
-        
-        let spawnY = this.seaLevel + 10;
+        // 🧠 INTELLIGENT SPAWN DETECTION - Find the highest solid surface
+        let spawnY = this.seaLevel; // Safe fallback 
         let foundGround = false;
+        let groundBlockType = null;
         
-        // Verbesserte Spawn-Suche mit detaillierter Ausgabe
-        console.log(`Searching for spawn ground around X=${spawnX}, Z=${spawnZ}:`);
+        // 🔍 SURFACE DETECTION - Search from top down for reliable ground
+        console.log(`🔍 Scanning for solid surface at X=${spawnX}, Z=${spawnZ}:`);
+        
         for (let y = this.worldHeight - 1; y >= 0; y--) {
             const blockKey = `${spawnX}_${y}_${spawnZ}`;
             const blockType = spawnChunk.get(blockKey);
             
-            // Zeige nur relevante Y-Werte
-            if (y >= this.seaLevel - 5) {
-                console.log(`  Y=${y}: ${blockType}`);
+            // Debug: Show terrain structure
+            if (y >= this.seaLevel - 5 && y <= this.seaLevel + 50) {
+                console.log(`  Y=${y}: ${blockType || 'undefined'}`);
             }
             
+            // 🎯 SOLID GROUND DETECTION - Any non-air, non-water block
             if (blockType && blockType !== 'air' && blockType !== 'water') {
-                spawnY = y + 3;
+                spawnY = y + 3; // Spawn 3 blocks above solid ground
                 foundGround = true;
-                console.log(`✓ Found solid ground at Y=${y}, spawning player at Y=${spawnY}`);
+                groundBlockType = blockType;
+                console.log(`✅ GROUND FOUND! Solid ${blockType} at Y=${y}, spawning at Y=${spawnY}`);
                 break;
             }
         }
         
+        // 🚨 EMERGENCY SPAWN PROTECTION - Prevent sky spawning
         if (!foundGround) {
-            console.warn(`No ground found! Using default spawn height: ${spawnY}`);
+            // Use terrain height calculation as backup
+            const terrainHeight = this.calculateExpectedTerrainHeight(spawnX, spawnZ);
+            spawnY = Math.max(terrainHeight + 3, this.seaLevel + 5);
+            console.warn(`⚠️  NO GROUND DETECTED! Using calculated terrain height: ${terrainHeight}, spawning at Y=${spawnY}`);
+            
+            // Force-place a safety platform if needed
+            const safetyBlockKey = `${spawnX}_${spawnY - 1}_${spawnZ}`;
+            if (!spawnChunk.has(safetyBlockKey)) {
+                spawnChunk.set(safetyBlockKey, 'grass');
+                console.log(`🛟 Emergency safety platform placed at Y=${spawnY - 1}`);
+            }
         }
         
+        // 🌤️ ANTI-CLOUD VALIDATION - Ensure spawn is not in sky
+        const cloudHeight = 60; // Clouds start at Y=60
+        if (spawnY >= cloudHeight) {
+            spawnY = Math.min(spawnY, cloudHeight - 5);
+            console.warn(`☁️  Spawn too high! Adjusted to Y=${spawnY} to avoid clouds`);
+        }
+        
+        // 🛡️ ABSOLUTE SAFETY CHECKS - Final validation
+        if (spawnY < this.seaLevel) {
+            spawnY = this.seaLevel + 3;
+            console.warn(`🌊 Spawn below sea level! Adjusted to Y=${spawnY}`);
+        }
+        
+        if (spawnY > this.worldHeight - 10) {
+            spawnY = this.worldHeight - 10;
+            console.warn(`🚧 Spawn too high! Adjusted to Y=${spawnY}`);
+        }
+        
+        // 🎯 FINAL SPAWN POSITION
         this.camera.position.set(spawnX + 0.5, spawnY, spawnZ + 0.5);
-        console.log(`Final spawn position: ${spawnX + 0.5}, ${spawnY}, ${spawnZ + 0.5}`);
+        console.log(`🎯 FINAL SPAWN: Player at (${spawnX + 0.5}, ${spawnY}, ${spawnZ + 0.5})`);
+        console.log(`🌍 Ground type: ${groundBlockType || 'emergency platform'}, Distance from clouds: ${cloudHeight - spawnY} blocks`);
         
         this.lastPlayerChunk = { x: spawnChunkX, z: spawnChunkZ };
-        
-        console.log(`About to render world...`);
         
         // Load spawn chunk and immediate neighbors for better initial experience
         for (let dx = -1; dx <= 1; dx++) {
@@ -366,8 +396,28 @@ class MinecraftClone {
             }
         }
         
-        console.log(`World rendered. Total blocks in scene: ${this.blockMeshes.size}`);
+        console.log(`🌍 World loaded. Total blocks in scene: ${this.blockMeshes.size}`);
         console.log(`Loaded chunks: ${this.loadedChunks.size}`);
+    }
+    
+    // 🧮 TERRAIN HEIGHT CALCULATOR - For emergency spawn fallback
+    calculateExpectedTerrainHeight(worldX, worldZ) {
+        // Replicate the same height calculation used in terrain generation
+        const continentalScale = this.octaveNoise(worldX * 0.001, 0, worldZ * 0.001, 8, 0.7, 1) * 0.5 + 0.5;
+        const mountainRange = this.generateMountainRidges(worldX, worldZ);
+        const valleySystem = this.generateValleySystems(worldX, worldZ);
+        const localTerrain = this.generateLocalTerrain(worldX, worldZ);
+        
+        let baseHeight = this.seaLevel;
+        baseHeight += continentalScale * 25;
+        baseHeight += mountainRange.elevation;
+        baseHeight -= valleySystem.depth;
+        baseHeight += localTerrain * Math.min(5, mountainRange.influence);
+        
+        // Apply same constraints as in generateIntelligentHeightMap
+        baseHeight = Math.max(this.seaLevel - 10, Math.min(this.worldHeight - 20, baseHeight));
+        
+        return Math.floor(baseHeight);
     }
     
     initializePerlinNoise() {
