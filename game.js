@@ -29,15 +29,22 @@ class MinecraftClone {
         };
         
         this.moveSpeed = 0.15;
-        this.mouseSensitivity = 0.002;
+        this.mouseSensitivity = 0.003; // Increased for better responsiveness
+        this.mouseSmoothing = 0.2; // For smooth camera movement (higher = more responsive)
         this.isPointerLocked = false;
         
         this.keys = {};
         this.mouse = { x: 0, y: 0 };
+        this.mouseTarget = { x: 0, y: 0 }; // For smooth mouse movement
         this.velocity = { x: 0, y: 0, z: 0 };
         this.onGround = false;
         this.gravity = -0.02;
         this.jumpPower = 0.3;
+        
+        // Block targeting system
+        this.targetBlockWireframe = null;
+        this.targetBlockHelper = null;
+        this.currentTargetBlock = null;
         
         // Flight system
         this.isFlying = false;
@@ -257,6 +264,9 @@ class MinecraftClone {
         this.initializeWeatherSystem();
         this.initializeParticleSystem();
         
+        // Initialize block targeting system
+        this.initializeBlockTargeting();
+        
         this.lastTime = performance.now();
         this.frameCount = 0;
     }
@@ -276,9 +286,9 @@ class MinecraftClone {
         
         document.addEventListener('mousemove', (event) => {
             if (this.isPointerLocked) {
-                this.mouse.x -= event.movementX * this.mouseSensitivity;
-                this.mouse.y -= event.movementY * this.mouseSensitivity;
-                this.mouse.y = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.mouse.y));
+                this.mouseTarget.x -= event.movementX * this.mouseSensitivity;
+                this.mouseTarget.y -= event.movementY * this.mouseSensitivity;
+                this.mouseTarget.y = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.mouseTarget.y));
             }
         });
         
@@ -290,6 +300,17 @@ class MinecraftClone {
                 this.lightingEnabled = !this.lightingEnabled;
                 console.log(`🔆 Lighting: ${this.lightingEnabled ? 'ON' : 'OFF'}`);
                 this.updateLighting();
+            }
+            
+            // Mouse sensitivity controls
+            if (event.code === 'Equal' || event.code === 'NumpadAdd') { // + key
+                this.mouseSensitivity = Math.min(0.01, this.mouseSensitivity + 0.0005);
+                console.log(`🖱️ Mouse sensitivity: ${this.mouseSensitivity.toFixed(4)}`);
+            }
+            
+            if (event.code === 'Minus' || event.code === 'NumpadSubtract') { // - key
+                this.mouseSensitivity = Math.max(0.0005, this.mouseSensitivity - 0.0005);
+                console.log(`🖱️ Mouse sensitivity: ${this.mouseSensitivity.toFixed(4)}`);
             }
             
             if (event.code === 'KeyT') {
@@ -6485,8 +6506,17 @@ class MinecraftClone {
     }
     
     updateCamera() {
+        // Smooth mouse movement interpolation
+        this.mouse.x = THREE.MathUtils.lerp(this.mouse.x, this.mouseTarget.x, this.mouseSmoothing);
+        this.mouse.y = THREE.MathUtils.lerp(this.mouse.y, this.mouseTarget.y, this.mouseSmoothing);
+        
+        // Proper FPS camera rotation order - Y first (horizontal), then X (vertical)
+        this.camera.rotation.order = 'YXZ';
         this.camera.rotation.y = this.mouse.x;
         this.camera.rotation.x = this.mouse.y;
+        
+        // Update block targeting
+        this.updateBlockTargeting();
     }
     
     updateUI() {
@@ -6501,8 +6531,11 @@ class MinecraftClone {
         const currentBiome = this.getBiome(Math.floor(pos.x), Math.floor(pos.z));
         document.getElementById('biome').textContent = `Biome: ${this.formatBiomeName(currentBiome)}`;
         
-        // Update seed information
-        document.getElementById('seed').textContent = `Seed: ${this.worldSeed}`;
+        // Update seed information with controls info
+        const targetInfo = this.currentTargetBlock ? 
+            ` | Target: (${this.currentTargetBlock.x}, ${this.currentTargetBlock.y}, ${this.currentTargetBlock.z})` : '';
+        document.getElementById('seed').textContent = 
+            `Seed: ${this.worldSeed} | Sensitivity: ${this.mouseSensitivity.toFixed(4)} (+/-) | Selected: ${this.selectedBlockType}${targetInfo}`;
         
         this.frameCount++;
         const currentTime = performance.now();
@@ -6671,6 +6704,83 @@ class MinecraftClone {
                     }
                 }
             }
+        }
+    }
+    
+    // ==================== BLOCK TARGETING SYSTEM ====================
+    
+    initializeBlockTargeting() {
+        // Create wireframe geometry for block outline
+        const wireframeGeometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(1.001, 1.001, 1.001));
+        const wireframeMaterial = new THREE.LineBasicMaterial({ 
+            color: 0x000000, 
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        this.targetBlockWireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+        this.targetBlockWireframe.visible = false;
+        this.scene.add(this.targetBlockWireframe);
+        
+        // Create face highlight helper
+        const faceGeometry = new THREE.PlaneGeometry(1.01, 1.01);
+        const faceMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide
+        });
+        
+        this.targetBlockHelper = new THREE.Mesh(faceGeometry, faceMaterial);
+        this.targetBlockHelper.visible = false;
+        this.scene.add(this.targetBlockHelper);
+        
+        console.log('Block targeting system initialized');
+    }
+    
+    updateBlockTargeting() {
+        const target = this.getTargetBlock();
+        
+        if (target && target.object.userData) {
+            const { x, y, z } = target.object.userData;
+            
+            // Update wireframe position
+            this.targetBlockWireframe.position.set(x + 0.5, y + 0.5, z + 0.5);
+            this.targetBlockWireframe.visible = true;
+            
+            // Update face helper for placement preview
+            if (target.face && target.face.normal) {
+                const normal = target.face.normal;
+                this.targetBlockHelper.visible = true;
+                
+                // Position the face helper on the targeted face
+                this.targetBlockHelper.position.set(
+                    x + 0.5 + normal.x * 0.501,
+                    y + 0.5 + normal.y * 0.501,
+                    z + 0.5 + normal.z * 0.501
+                );
+                
+                // Orient the face helper to match the face normal
+                this.targetBlockHelper.lookAt(
+                    this.targetBlockHelper.position.x + normal.x,
+                    this.targetBlockHelper.position.y + normal.y,
+                    this.targetBlockHelper.position.z + normal.z
+                );
+                
+                // Change color based on selected block type
+                const blockColor = this.blockTypes[this.selectedBlockType]?.color || 0xffffff;
+                this.targetBlockHelper.material.color.setHex(blockColor);
+            } else {
+                this.targetBlockHelper.visible = false;
+            }
+            
+            this.currentTargetBlock = { x, y, z, face: target.face };
+        } else {
+            // No target block
+            this.targetBlockWireframe.visible = false;
+            this.targetBlockHelper.visible = false;
+            this.currentTargetBlock = null;
         }
     }
     
