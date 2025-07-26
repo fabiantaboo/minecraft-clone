@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 class MinecraftClone {
     constructor() {
         this.scene = null;
@@ -55,7 +53,7 @@ class MinecraftClone {
         const canvas = document.getElementById('canvas');
         if (!canvas) throw new Error('Canvas element not found');
         
-        if (!window.THREE) throw new Error('Three.js not loaded');
+        if (typeof THREE === 'undefined') throw new Error('Three.js not loaded');
         
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x87CEEB);
