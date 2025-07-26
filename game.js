@@ -374,8 +374,8 @@ class MinecraftClone {
     updateMovement() {
         let moveX = 0, moveZ = 0;
         
-        if (this.keys['KeyW']) moveZ += 1;
-        if (this.keys['KeyS']) moveZ -= 1;
+        if (this.keys['KeyW']) moveZ -= 1;
+        if (this.keys['KeyS']) moveZ += 1;
         if (this.keys['KeyA']) moveX += 1;
         if (this.keys['KeyD']) moveX -= 1;
         
