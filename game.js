@@ -7,7 +7,7 @@ class MinecraftClone {
         this.worldSize = 32;
         this.worldHeight = 16;
         
-        this.moveSpeed = 0.1;
+        this.moveSpeed = 0.15;
         this.mouseSensitivity = 0.002;
         this.isPointerLocked = false;
         
@@ -15,8 +15,8 @@ class MinecraftClone {
         this.mouse = { x: 0, y: 0 };
         this.velocity = { x: 0, y: 0, z: 0 };
         this.onGround = false;
-        this.gravity = -0.01;
-        this.jumpPower = 0.2;
+        this.gravity = -0.02;
+        this.jumpPower = 0.3;
         
         this.selectedBlockType = 'grass';
         this.blockTypes = {
@@ -109,8 +109,8 @@ class MinecraftClone {
         
         document.addEventListener('mousemove', (event) => {
             if (this.isPointerLocked) {
-                this.mouse.x += event.movementX * this.mouseSensitivity;
-                this.mouse.y += event.movementY * this.mouseSensitivity;
+                this.mouse.x -= event.movementX * this.mouseSensitivity;
+                this.mouse.y -= event.movementY * this.mouseSensitivity;
                 this.mouse.y = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.mouse.y));
             }
         });
@@ -374,10 +374,10 @@ class MinecraftClone {
     updateMovement() {
         let moveX = 0, moveZ = 0;
         
-        if (this.keys['KeyW']) moveZ -= 1;
-        if (this.keys['KeyS']) moveZ += 1;
-        if (this.keys['KeyA']) moveX -= 1;
-        if (this.keys['KeyD']) moveX += 1;
+        if (this.keys['KeyW']) moveZ += 1;
+        if (this.keys['KeyS']) moveZ -= 1;
+        if (this.keys['KeyA']) moveX += 1;
+        if (this.keys['KeyD']) moveX -= 1;
         
         if (moveX !== 0 || moveZ !== 0) {
             const angle = this.mouse.x;
@@ -390,8 +390,8 @@ class MinecraftClone {
             this.velocity.x = worldMoveX * this.moveSpeed;
             this.velocity.z = worldMoveZ * this.moveSpeed;
         } else {
-            this.velocity.x *= 0.8;
-            this.velocity.z *= 0.8;
+            this.velocity.x *= 0.85;
+            this.velocity.z *= 0.85;
         }
         
         if (this.keys['Space'] && this.onGround) {
@@ -444,13 +444,20 @@ class MinecraftClone {
     
     isValidPosition(x, y, z) {
         const blockX = Math.floor(x);
-        const blockY = Math.floor(y - 1.5);
+        const blockY = Math.floor(y - 1.8);
         const blockZ = Math.floor(z);
         
         if (blockX < 0 || blockX >= this.worldSize || 
-            blockY < 0 || blockY >= this.worldHeight || 
             blockZ < 0 || blockZ >= this.worldSize) {
-            return blockY < 0;
+            return false;
+        }
+        
+        if (blockY < 0) {
+            return true;
+        }
+        
+        if (blockY >= this.worldHeight) {
+            return true;
         }
         
         return this.world[blockX] && this.world[blockX][blockZ] && this.world[blockX][blockZ][blockY] === 'air';
