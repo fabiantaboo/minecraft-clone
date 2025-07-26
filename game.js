@@ -568,5 +568,33 @@ class MinecraftClone {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-    new MinecraftClone();
+    if (typeof THREE === 'undefined') {
+        console.error('Three.js not loaded');
+        document.body.innerHTML = `
+            <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                        background: red; color: white; padding: 20px; border-radius: 10px; 
+                        font-family: Arial, sans-serif; text-align: center;">
+                <h3>Error: Three.js not loaded</h3>
+                <p>Please check your internet connection and refresh the page.</p>
+                <p>If the problem persists, try a different browser or enable JavaScript.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    try {
+        new MinecraftClone();
+    } catch (error) {
+        console.error('Game initialization error:', error);
+        document.body.innerHTML = `
+            <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                        background: red; color: white; padding: 20px; border-radius: 10px; 
+                        font-family: Arial, sans-serif; text-align: center;">
+                <h3>Failed to initialize game</h3>
+                <p>Error: ${error.message}</p>
+                <p>Please check if WebGL is supported in your browser.</p>
+                <p>Try visiting: <a href="https://get.webgl.org/" style="color: yellow;">get.webgl.org</a></p>
+            </div>
+        `;
+    }
 });
