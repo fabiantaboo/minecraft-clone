@@ -384,8 +384,8 @@ class MinecraftClone {
             const cos = Math.cos(angle);
             const sin = Math.sin(angle);
             
-            const worldMoveX = moveX * cos - moveZ * sin;
-            const worldMoveZ = moveX * sin + moveZ * cos;
+            const worldMoveX = moveZ * sin + moveX * cos;
+            const worldMoveZ = moveZ * cos - moveX * sin;
             
             this.velocity.x = worldMoveX * this.moveSpeed;
             this.velocity.z = worldMoveZ * this.moveSpeed;
