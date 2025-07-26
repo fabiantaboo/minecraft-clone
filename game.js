@@ -943,191 +943,68 @@ class MinecraftClone {
         return chunk;
     }
     
-    // Enhanced terrain generation with sophisticated features
+    // Simple, reliable terrain height generation
     getSimpleTerrainHeight(worldX, worldZ) {
-        // Get biome factors for terrain modification
-        const biome = this.getBiome(worldX, worldZ);
+        // Use simple noise for basic terrain variation
+        const baseNoise = this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 4, 0.5, 1);
+        const hillNoise = this.octaveNoise(worldX * 0.03, 0, worldZ * 0.03, 3, 0.3, 1);
         
-        // Multi-scale terrain generation
-        const continentalScale = this.octaveNoise(worldX * 0.001, 0, worldZ * 0.001, 6, 0.6, 1);
-        const mountainScale = this.octaveNoise(worldX * 0.005, 0, worldZ * 0.005, 4, 0.5, 1);
-        const hillScale = this.octaveNoise(worldX * 0.02, 0, worldZ * 0.02, 3, 0.4, 1);
-        const detailScale = this.octaveNoise(worldX * 0.1, 0, worldZ * 0.1, 2, 0.3, 1);
+        // Calculate height with predictable ranges
+        let height = this.seaLevel + (baseNoise * 15) + (hillNoise * 8);
         
-        // Base continental height
-        let height = this.seaLevel + continentalScale * 30;
+        // Ensure height is within reasonable bounds
+        height = Math.floor(Math.max(this.seaLevel - 5, Math.min(this.worldHeight - 20, height)));
         
-        // Add mountain features
-        if (continentalScale > 0.2) {
-            height += Math.pow(Math.max(0, continentalScale - 0.2), 2) * 40;
-        }
-        
-        // Add hills and valleys
-        height += hillScale * 8;
-        
-        // Add surface details
-        height += detailScale * 3;
-        
-        // Biome-specific height modifications
-        switch (biome) {
-            case 'mountain':
-            case 'snow_mountain':
-                height += Math.abs(mountainScale) * 25;
-                break;
-            case 'canyon':
-            case 'desert_canyon':
-                // Create canyon valleys
-                const canyonDepth = Math.abs(this.octaveNoise(worldX * 0.03, 0, worldZ * 0.03, 2, 0.5, 1));
-                if (canyonDepth > 0.6) {
-                    height -= (canyonDepth - 0.6) * 30;
-                }
-                break;
-            case 'ocean':
-            case 'frozen_ocean':
-                height = Math.min(height, this.seaLevel - 5);
-                break;
-            case 'mesa':
-                // Create mesa plateaus
-                const mesaHeight = Math.floor(height / 10) * 10; // Stepped terrain
-                height = mesaHeight + Math.abs(detailScale) * 5;
-                break;
-        }
-        
-        return Math.floor(Math.max(0, Math.min(this.worldHeight - 10, height)));
+        return height;
     }
     
     getSimpleBiome(worldX, worldZ) {
-        // Use the advanced biome system instead of simple one
-        return this.getBiome(worldX, worldZ);
+        // For now, just use plains biome to ensure reliable terrain generation
+        return 'plains';
     }
     
     generateSimpleTerrainColumn(chunk, worldX, worldZ, height, biome) {
-        // Check for rivers
-        const isRiver = this.isRiver(worldX, worldZ);
-        const isLake = this.isLake(worldX, worldZ);
+        // Simple, reliable terrain generation - no caves, no complex features
+        let blocksGenerated = 0;
         
-        // Modify height for water features
-        if (isRiver) {
-            height = Math.min(height, this.seaLevel);
-        } else if (isLake) {
-            height = Math.min(height, this.seaLevel - 2);
-        }
-        
-        // Generate enhanced terrain with much denser block placement
-        // Start from bedrock level and fill ALL spaces with appropriate blocks
-        const minTerrainHeight = Math.max(height, this.seaLevel - 5); // Ensure solid terrain even in water areas
-        const maxTerrainHeight = Math.max(height + 15, this.seaLevel + 10); // Extended terrain range for density
-        
-        for (let y = 0; y <= maxTerrainHeight; y++) {
+        for (let y = 0; y <= height; y++) {
             const blockKey = `${worldX}_${y}_${worldZ}`;
             let blockType;
             
-            // Bedrock layer at bottom
+            // Bedrock at bottom
             if (y === 0) {
                 blockType = 'bedrock';
             }
-            // Check for caves first (only in solid terrain areas)
-            else if (y <= height && y > 5 && y <= this.seaLevel + 20) {
-                const caveResult = this.generateAdvancedCaveSystem(worldX, y, worldZ, biome);
-                if (caveResult.isAir) {
-                    // This is a cave - but we'll still add water if below sea level
-                    if (y <= this.seaLevel) {
-                        blockType = 'water';
-                    } else {
-                        // Air cave - but we'll limit cave frequency to maintain density
-                        const caveDensityNoise = this.octaveNoise(worldX * 0.05, y * 0.1, worldZ * 0.05, 2, 0.3, 1);
-                        if (caveDensityNoise > 0.3) {
-                            // Reduce cave frequency - fill with appropriate terrain instead
-                            if (y <= height - 8) {
-                                blockType = 'stone';
-                            } else if (y <= height - 3) {
-                                blockType = this.getSoilType(biome, 0.5);
-                            } else {
-                                blockType = 'dirt';
-                            }
-                        } else {
-                            chunk.set(blockKey, 'air');
-                            continue;
-                        }
-                    }
-                }
+            // Surface block (grass for plains)
+            else if (y === height) {
+                blockType = 'grass';
+            }
+            // Dirt layer (3 blocks deep)
+            else if (y >= height - 3) {
+                blockType = 'dirt';
+            }
+            // Stone for everything else
+            else {
+                blockType = 'stone';
             }
             
-            // Enhanced terrain generation with much denser block placement
-            if (!blockType) {
-                if (y <= height) {
-                    // Original terrain - maintain existing logic but ensure density
-                    if (y === height && !isRiver && !isLake) {
-                        // Surface block based on biome
-                        blockType = this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
-                    } else if (y >= height - 3) {
-                        // Subsurface layer
-                        blockType = this.getSoilType(biome, 0.5);
-                    } else if (y >= height - 8) {
-                        // Upper rock layer
-                        blockType = this.getRockType(biome, y, height);
-                    } else {
-                        // Deep stone with occasional ores
-                        blockType = this.getDeepRockWithOres(worldX, y, worldZ, biome);
-                    }
-                }
-                // ENHANCED: Fill areas above original terrain with additional terrain
-                else if (y <= minTerrainHeight + 8) {
-                    // Create additional terrain layers above original height
-                    const extraTerrainNoise = this.octaveNoise(worldX * 0.08, y * 0.1, worldZ * 0.08, 3, 0.4, 1);
-                    const densityNoise = this.octaveNoise(worldX * 0.15, y * 0.2, worldZ * 0.15, 2, 0.5, 1);
-                    
-                    // Much higher chance of terrain generation for density
-                    if (extraTerrainNoise > -0.3 || densityNoise > 0.1) {
-                        const distanceFromOriginal = y - height;
-                        
-                        if (distanceFromOriginal <= 2) {
-                            // Close to original surface - use dirt/grass
-                            blockType = Math.random() < 0.7 ? 'dirt' : this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
-                        } else if (distanceFromOriginal <= 5) {
-                            // Medium distance - mix of dirt and stone
-                            blockType = Math.random() < 0.6 ? 'dirt' : 'stone';
-                        } else {
-                            // Higher up - mostly stone with some dirt
-                            blockType = Math.random() < 0.4 ? 'dirt' : 'stone';
-                        }
-                    }
-                }
-                // Water areas - ensure they're filled too
-                else if (y <= this.seaLevel && !blockType) {
-                    if (biome === 'swamp') {
-                        blockType = 'swamp_water';
-                    } else if (biome === 'frozen_ocean' || biome === 'ice_spikes') {
-                        blockType = y === this.seaLevel ? 'ice' : 'water';
-                    } else {
-                        blockType = 'water';
-                    }
-                }
-                // CRITICAL: Fill remaining empty spaces with terrain to eliminate gaps
-                else if (y <= this.seaLevel + 5) {
-                    // Fill areas just above sea level with terrain to create solid world
-                    const fillNoise = this.octaveNoise(worldX * 0.1, y * 0.1, worldZ * 0.1, 2, 0.3, 1);
-                    if (fillNoise > -0.2) { // High probability of terrain
-                        if (y <= this.seaLevel + 2) {
-                            blockType = 'dirt';
-                        } else {
-                            blockType = Math.random() < 0.5 ? 'dirt' : this.getSurfaceBlockType(biome, y, height, worldX, worldZ);
-                        }
-                    }
-                }
-            }
-            
-            if (blockType) {
-                chunk.set(blockKey, blockType);
+            // Always place a block - no gaps, no air, no caves
+            chunk.set(blockKey, blockType);
+            blocksGenerated++;
+        }
+        
+        // Add water if below sea level
+        if (height < this.seaLevel) {
+            for (let y = height + 1; y <= this.seaLevel; y++) {
+                const blockKey = `${worldX}_${y}_${worldZ}`;
+                chunk.set(blockKey, 'water');
+                blocksGenerated++;
             }
         }
         
-        // FINAL PASS: Fill any remaining gaps to ensure completely solid terrain
-        this.fillTerrainGaps(chunk, worldX, worldZ, maxTerrainHeight);
-        
-        // Add vegetation based on advanced biome system
-        if (height > this.seaLevel && !isRiver && !isLake) {
-            this.generateVegetationForBiome(chunk, worldX, height, worldZ, biome);
+        // Debug logging for first few columns
+        if (worldX >= 0 && worldX <= 2 && worldZ >= 0 && worldZ <= 2) {
+            console.log(`Column (${worldX}, ${worldZ}): height=${height}, blocks=${blocksGenerated}`);
         }
     }
     
@@ -5686,28 +5563,20 @@ class MinecraftClone {
                 solidBlocks++;
                 const [x, y, z] = blockKey.split('_').map(Number);
                 
-                // Ultra-aggressive LOD for maximum performance
+                // Simple LOD for reliable rendering
                 let shouldRender = false;
                 
-                if (distance <= this.lodLevels.high) {
-                    // High detail: render all visible blocks in immediate area
+                if (distance <= 2) {
+                    // Close chunks: render all blocks with exposed faces
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData);
-                } else if (distance <= this.lodLevels.medium) {
-                    // Medium detail: surface and important underground blocks
+                } else if (distance <= 4) {
+                    // Medium distance: surface blocks and important blocks
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 (this.isTopSurface(x, y, z, chunkData) || 
-                                  (y < this.seaLevel && blockType === 'water'));
-                } else if (distance <= this.lodLevels.low) {
-                    // Low detail: sparse surface blocks only
-                    shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 this.isTopSurface(x, y, z, chunkData) &&
-                                 ((x + z) % 2 === 0) && y >= this.seaLevel - 2;
+                                 (this.isTopSurface(x, y, z, chunkData) || y < this.seaLevel + 5);
                 } else {
-                    // Minimal detail: ultra-sparse prominent features
+                    // Far chunks: surface blocks only
                     shouldRender = this.shouldRenderBlock(x, y, z, chunkData) && 
-                                 this.isTopSurface(x, y, z, chunkData) &&
-                                 ((x + z) % 3 === 0) && 
-                                 (y > this.seaLevel + 5 || blockType === 'snow' || blockType === 'mountain_stone');
+                                 this.isTopSurface(x, y, z, chunkData);
                 }
                 
                 if (shouldRender) {
@@ -5843,7 +5712,17 @@ class MinecraftClone {
             }
         }
         
-        console.log(`🔧 Face culling: ${positions.length} -> ${culledPositions.length} blocks (${Math.round((1 - culledPositions.length/positions.length) * 100)}% culled)`);
+        const cullPercentage = Math.round((1 - culledPositions.length/positions.length) * 100);
+        console.log(`🔧 Face culling: ${positions.length} -> ${culledPositions.length} blocks (${cullPercentage}% culled)`);
+        
+        // Additional debug for spawn area
+        if (positions.length > 0) {
+            const firstPos = positions[0];
+            if (firstPos.x >= 0 && firstPos.x <= 16 && firstPos.z >= 0 && firstPos.z <= 16) {
+                console.log(`🎯 Spawn chunk culling: ${blockType} blocks ${cullPercentage}% culled`);
+            }
+        }
+        
         return culledPositions;
     }
     
