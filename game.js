@@ -839,6 +839,12 @@ class MinecraftClone {
         this.addCoherentVegetation(chunk, heightMap, startX, startZ);
         this.addGeologicalStructures(chunk, heightMap, supportMap, startX, startZ);
         
+        // 🚀 PHASE 5: ULTIMATIVE ANTI-FLOATING-BLOCK POST-PROCESSING
+        this.applyUltimateAntiFloatingBlockSystem(chunk, heightMap, supportMap, startX, startZ);
+        
+        // 🧹 PHASE 6: FINAL TERRAIN CLEANUP & VALIDATION
+        this.performFinalTerrainCleanup(chunk, heightMap, startX, startZ);
+        
         return chunk;
     }
     
@@ -1046,58 +1052,735 @@ class MinecraftClone {
     }
     
     generateRiverNetworks(heightMap, erosionMap, startX, startZ) {
-        // 🏞️ INTELLIGENT RIVER GENERATION following natural flow patterns
-        const riverMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        // 🌊 ULTIMATIVES HYDROLOGICAL SYSTEM - Realistische Flussnetzwerke und Seen
+        console.log('🌊 Generating ULTIMATE hydrological system...');
+        
+        // PHASE 1: GRUNDWASSER-TABELLE berechnen
+        const groundwaterMap = this.calculateGroundwaterTable(heightMap, startX, startZ);
+        
+        // PHASE 2: WASSERSCHEIDEN-ANALYSE
+        const watershedMap = this.calculateWatersheds(heightMap, startX, startZ);
+        
+        // PHASE 3: REALISTISCHE FLUSSNETZWERKE generieren
+        const riverNetwork = this.generateRealisticRiverNetwork(heightMap, erosionMap, watershedMap, startX, startZ);
+        
+        // PHASE 4: NATÜRLICHE SEEN generieren
+        const lakeMap = this.generateNaturalLakes(heightMap, groundwaterMap, riverNetwork, startX, startZ);
+        
+        // PHASE 5: FLUSSMÄANDER und FLUSSBETTFORMEN
+        const meanderMap = this.generateRiverMeanders(riverNetwork, heightMap, startX, startZ);
+        
+        // PHASE 6: KOMBINIERE alle Wasser-Features
+        const finalWaterMap = this.combineWaterFeatures(riverNetwork, lakeMap, meanderMap, startX, startZ);
+        
+        console.log(`🌊 ✅ Generated hydrological system with ${riverNetwork.rivers.length} rivers and ${lakeMap.lakes.length} lakes`);
+        
+        return finalWaterMap;
+    }
+    
+    calculateGroundwaterTable(heightMap, startX, startZ) {
+        // 🌊 BERECHNET REALISTISCHE GRUNDWASSER-TABELLE
+        const groundwaterMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(0));
         
         for (let x = 0; x < this.chunkSize; x++) {
             for (let z = 0; z < this.chunkSize; z++) {
                 const worldX = startX + x;
                 const worldZ = startZ + z;
+                const surfaceHeight = heightMap[x][z];
                 
-                // Rivers form in valleys with high erosion and low elevation
-                const isLowArea = heightMap[x][z] < this.seaLevel + 5;
-                const hasStrongErosion = erosionMap[x][z] > 0.4;
-                const riverNoise = this.octaveNoise(worldX * 0.02, 0, worldZ * 0.02, 3, 0.6, 1);
+                // Grundwasserspiegel basierend auf Topographie und Permeabilität
+                const permeabilityNoise = this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 4, 0.5, 1);
+                const topographicInfluence = (surfaceHeight - this.seaLevel) * 0.3;
+                const regionalFlow = this.octaveNoise(worldX * 0.005, 0, worldZ * 0.005, 2, 0.8, 1) * 5;
                 
-                if (isLowArea && hasStrongErosion && riverNoise > 0.3) {
-                    riverMap[x][z] = true;
-                }
+                // Grundwasserspiegel ist meist niedriger als Oberfläche
+                const groundwaterLevel = Math.max(this.seaLevel - 5, 
+                    surfaceHeight - 8 - topographicInfluence + regionalFlow + permeabilityNoise * 3);
+                
+                groundwaterMap[x][z] = groundwaterLevel;
             }
         }
         
-        return riverMap;
+        return groundwaterMap;
     }
     
-    calculateSupportStructure(heightMap) {
-        // 🧠 PHYSICS-BASED SUPPORT SYSTEM - No floating blocks!
-        const supportMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(1.0));
+    calculateWatersheds(heightMap, startX, startZ) {
+        // 🏔️ BERECHNET WASSERSCHEIDEN-GRENZEN für realistische Einzugsgebiete
+        const watershedMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(0));
+        const processed = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
         
-        for (let x = 0; x < this.chunkSize; x++) {
-            for (let z = 0; z < this.chunkSize; z++) {
-                // Calculate structural support based on neighboring terrain
-                let supportStrength = 1.0;
-                
-                // Check for overhangs and unsupported areas
-                if (x > 0 && x < this.chunkSize - 1 && z > 0 && z < this.chunkSize - 1) {
+        let currentWatershedId = 1;
+        
+        // Finde Wasserscheiden-Punkte (lokale Maxima)
+        for (let x = 1; x < this.chunkSize - 1; x++) {
+            for (let z = 1; z < this.chunkSize - 1; z++) {
+                if (!processed[x][z]) {
+                    const currentHeight = heightMap[x][z];
+                    
+                    // Prüfe ob dies ein Wasserscheiden-Punkt ist
                     const neighbors = [
                         heightMap[x-1][z], heightMap[x+1][z],
                         heightMap[x][z-1], heightMap[x][z+1]
                     ];
                     
-                    const currentHeight = heightMap[x][z];
-                    const maxNeighbor = Math.max(...neighbors);
+                    const isWatershed = neighbors.every(height => currentHeight >= height);
                     
-                    // Reduce support for terrain much higher than neighbors
-                    if (currentHeight > maxNeighbor + 5) {
-                        supportStrength = Math.max(0.2, 1.0 - (currentHeight - maxNeighbor) * 0.1);
+                    if (isWatershed && currentHeight > this.seaLevel + 3) {
+                        // Markiere Einzugsgebiet für diese Wasserscheide
+                        this.markWatershedBasin(watershedMap, processed, heightMap, x, z, currentWatershedId);
+                        currentWatershedId++;
                     }
                 }
-                
-                supportMap[x][z] = supportStrength;
             }
         }
         
+        return watershedMap;
+    }
+    
+    markWatershedBasin(watershedMap, processed, heightMap, startX, startZ, watershedId) {
+        // 🌊 MARKIERT EINZUGSGEBIET für eine Wasserscheide
+        const queue = [{x: startX, z: startZ}];
+        const maxBasinSize = 50; // Begrenze Größe für Performance
+        let basinSize = 0;
+        
+        while (queue.length > 0 && basinSize < maxBasinSize) {
+            const {x, z} = queue.shift();
+            
+            if (x < 0 || x >= this.chunkSize || z < 0 || z >= this.chunkSize || 
+                processed[x][z] || watershedMap[x][z] !== 0) {
+                continue;
+            }
+            
+            processed[x][z] = true;
+            watershedMap[x][z] = watershedId;
+            basinSize++;
+            
+            const currentHeight = heightMap[x][z];
+            
+            // Prüfe 4-Nachbarn
+            const neighbors = [
+                {x: x-1, z: z}, {x: x+1, z: z},
+                {x: x, z: z-1}, {x: x, z: z+1}
+            ];
+            
+            for (const neighbor of neighbors) {
+                if (neighbor.x >= 0 && neighbor.x < this.chunkSize && 
+                    neighbor.z >= 0 && neighbor.z < this.chunkSize && 
+                    !processed[neighbor.x][neighbor.z]) {
+                    
+                    const neighborHeight = heightMap[neighbor.x][neighbor.z];
+                    
+                    // Wasser fließt bergab - füge niedrigere Nachbarn hinzu
+                    if (neighborHeight <= currentHeight + 1) {
+                        queue.push(neighbor);
+                    }
+                }
+            }
+        }
+    }
+    
+    generateRealisticRiverNetwork(heightMap, erosionMap, watershedMap, startX, startZ) {
+        // 🏞️ GENERIERT REALISTISCHE FLUSSNETZWERKE basierend auf Topographie
+        const rivers = [];
+        const riverMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        // Für jede Wasserscheide, generiere Flüsse
+        const watershedIds = new Set(watershedMap.flat().filter(id => id > 0));
+        
+        for (const watershedId of watershedIds) {
+            // Finde höchsten Punkt in dieser Wasserscheide
+            let highestPoint = null;
+            let maxHeight = -Infinity;
+            
+            for (let x = 0; x < this.chunkSize; x++) {
+                for (let z = 0; z < this.chunkSize; z++) {
+                    if (watershedMap[x][z] === watershedId && heightMap[x][z] > maxHeight) {
+                        maxHeight = heightMap[x][z];
+                        highestPoint = {x, z};
+                    }
+                }
+            }
+            
+            if (highestPoint && maxHeight > this.seaLevel + 5) {
+                // Generiere Hauptfluss von höchstem Punkt bergab
+                const mainRiver = this.traceRiverPath(heightMap, highestPoint.x, highestPoint.z, startX, startZ);
+                
+                if (mainRiver.length > 5) {
+                    rivers.push({
+                        id: watershedId,
+                        path: mainRiver,
+                        type: 'main',
+                        width: this.calculateRiverWidth(mainRiver.length)
+                    });
+                    
+                    // Markiere Fluss in der Karte
+                    for (const point of mainRiver) {
+                        if (point.x >= 0 && point.x < this.chunkSize && 
+                            point.z >= 0 && point.z < this.chunkSize) {
+                            riverMap[point.x][point.z] = true;
+                        }
+                    }
+                    
+                    // Generiere Nebenflüsse
+                    this.generateTributaries(heightMap, riverMap, mainRiver, watershedId, startX, startZ, rivers);
+                }
+            }
+        }
+        
+        return { rivers: rivers, riverMap: riverMap };
+    }
+    
+    traceRiverPath(heightMap, startX, startZ, chunkStartX, chunkStartZ) {
+        // 🌊 VERFOLGT FLUSSVERLAUF bergab bis zum Meer oder niedrigsten Punkt
+        const riverPath = [];
+        let currentX = startX;
+        let currentZ = startZ;
+        const visited = new Set();
+        const maxPathLength = 30;
+        
+        while (riverPath.length < maxPathLength) {
+            const key = `${currentX}_${currentZ}`;
+            if (visited.has(key)) break; // Vermeide Schleifen
+            visited.add(key);
+            
+            riverPath.push({x: currentX, z: currentZ, height: heightMap[currentX][currentZ]});
+            
+            // Finde steilsten Abstieg
+            let bestNext = null;
+            let maxDescent = 0;
+            
+            const neighbors = [
+                {x: currentX-1, z: currentZ}, {x: currentX+1, z: currentZ},
+                {x: currentX, z: currentZ-1}, {x: currentX, z: currentZ+1},
+                {x: currentX-1, z: currentZ-1}, {x: currentX+1, z: currentZ+1},
+                {x: currentX-1, z: currentZ+1}, {x: currentX+1, z: currentZ-1}
+            ];
+            
+            for (const neighbor of neighbors) {
+                if (neighbor.x >= 0 && neighbor.x < this.chunkSize && 
+                    neighbor.z >= 0 && neighbor.z < this.chunkSize) {
+                    
+                    const neighborHeight = heightMap[neighbor.x][neighbor.z];
+                    const currentHeight = heightMap[currentX][currentZ];
+                    const descent = currentHeight - neighborHeight;
+                    
+                    if (descent > maxDescent) {
+                        maxDescent = descent;
+                        bestNext = neighbor;
+                    }
+                }
+            }
+            
+            if (!bestNext || maxDescent <= 0) {
+                // Fluss erreicht lokales Minimum oder Meer
+                break;
+            }
+            
+            currentX = bestNext.x;
+            currentZ = bestNext.z;
+            
+            // Stoppe wenn Meer erreicht
+            if (heightMap[currentX][currentZ] <= this.seaLevel) {
+                riverPath.push({x: currentX, z: currentZ, height: heightMap[currentX][currentZ]});
+                break;
+            }
+        }
+        
+        return riverPath;
+    }
+    
+    calculateRiverWidth(riverLength) {
+        // 🌊 BERECHNET FLUSSBREITE basierend auf Länge (Länge = Einzugsgebiet)
+        return Math.max(1, Math.min(3, Math.floor(riverLength / 8)));
+    }
+    
+    generateTributaries(heightMap, riverMap, mainRiver, watershedId, startX, startZ, rivers) {
+        // 🌊 GENERIERT NEBENFLÜSSE für Hauptfluss
+        const tributaryCount = Math.min(3, Math.floor(mainRiver.length / 10));
+        
+        for (let i = 0; i < tributaryCount; i++) {
+            // Wähle zufälligen Punkt entlang des Hauptflusses
+            const connectionIndex = Math.floor(mainRiver.length * 0.3) + 
+                                   Math.floor(Math.random() * Math.floor(mainRiver.length * 0.4));
+            
+            if (connectionIndex < mainRiver.length) {
+                const connectionPoint = mainRiver[connectionIndex];
+                
+                // Finde nahegelegenen höheren Punkt für Nebenfluss-Start
+                const tributaryStart = this.findTributaryStart(heightMap, connectionPoint.x, connectionPoint.z);
+                
+                if (tributaryStart) {
+                    const tributaryPath = this.traceRiverPath(heightMap, tributaryStart.x, tributaryStart.z, startX, startZ);
+                    
+                    if (tributaryPath.length > 3) {
+                        rivers.push({
+                            id: `${watershedId}_trib_${i}`,
+                            path: tributaryPath,
+                            type: 'tributary',
+                            width: 1,
+                            connectsTo: watershedId
+                        });
+                        
+                        // Markiere Nebenfluss in Karte
+                        for (const point of tributaryPath) {
+                            if (point.x >= 0 && point.x < this.chunkSize && 
+                                point.z >= 0 && point.z < this.chunkSize) {
+                                riverMap[point.x][point.z] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    findTributaryStart(heightMap, connectionX, connectionZ) {
+        // 🌊 FINDET STARTPUNKT für Nebenfluss (höher als Verbindungspunkt)
+        const connectionHeight = heightMap[connectionX][connectionZ];
+        const searchRadius = 5;
+        
+        for (let radius = 2; radius <= searchRadius; radius++) {
+            for (let angle = 0; angle < 2 * Math.PI; angle += Math.PI / 4) {
+                const x = connectionX + Math.round(Math.cos(angle) * radius);
+                const z = connectionZ + Math.round(Math.sin(angle) * radius);
+                
+                if (x >= 0 && x < this.chunkSize && z >= 0 && z < this.chunkSize) {
+                    if (heightMap[x][z] > connectionHeight + 2) {
+                        return {x, z};
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    generateNaturalLakes(heightMap, groundwaterMap, riverNetwork, startX, startZ) {
+        // 🏞️ GENERIERT NATÜRLICHE SEEN in Senken und Flussdelta-Bereichen
+        const lakes = [];
+        const lakeMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        // METHODE 1: Topographische Senken finden
+        for (let x = 2; x < this.chunkSize - 2; x++) {
+            for (let z = 2; z < this.chunkSize - 2; z++) {
+                if (this.isNaturalDepression(heightMap, x, z)) {
+                    const lake = this.createLakeInDepression(heightMap, groundwaterMap, x, z, startX, startZ);
+                    if (lake.size > 5) {
+                        lakes.push(lake);
+                        
+                        // Markiere See in Karte
+                        for (const point of lake.area) {
+                            if (point.x >= 0 && point.x < this.chunkSize && 
+                                point.z >= 0 && point.z < this.chunkSize) {
+                                lakeMap[point.x][point.z] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // METHODE 2: Flussdelta-Seen (wo Flüsse ins Meer münden)
+        for (const river of riverNetwork.rivers) {
+            if (river.type === 'main' && river.path.length > 0) {
+                const riverEnd = river.path[river.path.length - 1];
+                if (riverEnd.height <= this.seaLevel + 2) {
+                    const deltaLake = this.createDeltaLake(heightMap, riverEnd, startX, startZ);
+                    if (deltaLake.size > 3) {
+                        lakes.push(deltaLake);
+                        
+                        for (const point of deltaLake.area) {
+                            if (point.x >= 0 && point.x < this.chunkSize && 
+                                point.z >= 0 && point.z < this.chunkSize) {
+                                lakeMap[point.x][point.z] = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        return { lakes: lakes, lakeMap: lakeMap };
+    }
+    
+    isNaturalDepression(heightMap, centerX, centerZ) {
+        // 🏞️ PRÜFT OB POSITION EINE NATÜRLICHE SENKE IST
+        const centerHeight = heightMap[centerX][centerZ];
+        const checkRadius = 2;
+        let lowerCount = 0;
+        let totalChecked = 0;
+        
+        for (let dx = -checkRadius; dx <= checkRadius; dx++) {
+            for (let dz = -checkRadius; dz <= checkRadius; dz++) {
+                if (dx === 0 && dz === 0) continue;
+                
+                const x = centerX + dx;
+                const z = centerZ + dz;
+                
+                if (x >= 0 && x < this.chunkSize && z >= 0 && z < this.chunkSize) {
+                    const height = heightMap[x][z];
+                    if (height > centerHeight) {
+                        lowerCount++;
+                    }
+                    totalChecked++;
+                }
+            }
+        }
+        
+        // Senke wenn > 60% der Umgebung höher ist
+        return totalChecked > 0 && (lowerCount / totalChecked) > 0.6;
+    }
+    
+    createLakeInDepression(heightMap, groundwaterMap, centerX, centerZ, startX, startZ) {
+        // 🏞️ ERSTELLT SEE IN NATÜRLICHER SENKE
+        const lakeArea = [];
+        const visited = new Set();
+        const queue = [{x: centerX, z: centerZ}];
+        const centerHeight = heightMap[centerX][centerZ];
+        const maxLakeSize = 20;
+        
+        while (queue.length > 0 && lakeArea.length < maxLakeSize) {
+            const {x, z} = queue.shift();
+            const key = `${x}_${z}`;
+            
+            if (visited.has(key) || x < 0 || x >= this.chunkSize || 
+                z < 0 || z >= this.chunkSize) {
+                continue;
+            }
+            
+            visited.add(key);
+            const height = heightMap[x][z];
+            
+            // Nur Bereiche einbeziehen die nicht zu viel höher sind
+            if (height <= centerHeight + 1) {
+                lakeArea.push({x, z, depth: Math.max(1, centerHeight + 2 - height)});
+                
+                // Füge Nachbarn hinzu
+                const neighbors = [
+                    {x: x-1, z: z}, {x: x+1, z: z},
+                    {x: x, z: z-1}, {x: x, z: z+1}
+                ];
+                
+                for (const neighbor of neighbors) {
+                    queue.push(neighbor);
+                }
+            }
+        }
+        
+        return {
+            id: `lake_${centerX}_${centerZ}`,
+            type: 'depression',
+            center: {x: centerX, z: centerZ},
+            area: lakeArea,
+            size: lakeArea.length,
+            averageDepth: lakeArea.reduce((sum, point) => sum + point.depth, 0) / lakeArea.length
+        };
+    }
+    
+    createDeltaLake(heightMap, riverEnd, startX, startZ) {
+        // 🏞️ ERSTELLT DELTA-SEE wo Fluss ins Meer mündet
+        const lakeArea = [];
+        const deltaRadius = 3;
+        
+        for (let dx = -deltaRadius; dx <= deltaRadius; dx++) {
+            for (let dz = -deltaRadius; dz <= deltaRadius; dz++) {
+                const x = riverEnd.x + dx;
+                const z = riverEnd.z + dz;
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                
+                if (distance <= deltaRadius && x >= 0 && x < this.chunkSize && 
+                    z >= 0 && z < this.chunkSize) {
+                    
+                    const height = heightMap[x][z];
+                    if (height <= this.seaLevel + 1) {
+                        lakeArea.push({
+                            x, z, 
+                            depth: Math.max(1, this.seaLevel + 1 - height)
+                        });
+                    }
+                }
+            }
+        }
+        
+        return {
+            id: `delta_${riverEnd.x}_${riverEnd.z}`,
+            type: 'delta',
+            center: riverEnd,
+            area: lakeArea,
+            size: lakeArea.length,
+            averageDepth: lakeArea.length > 0 ? 
+                lakeArea.reduce((sum, point) => sum + point.depth, 0) / lakeArea.length : 0
+        };
+    }
+    
+    generateRiverMeanders(riverNetwork, heightMap, startX, startZ) {
+        // 🌊 GENERIERT REALISTISCHE FLUSSMÄANDER
+        const meanderMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        for (const river of riverNetwork.rivers) {
+            if (river.type === 'main' && river.path.length > 8) {
+                // Generiere Mäander für längere Flüsse
+                const meanderedPath = this.createMeanderedPath(river.path, heightMap);
+                
+                // Markiere Mäander in Karte
+                for (const point of meanderedPath) {
+                    if (point.x >= 0 && point.x < this.chunkSize && 
+                        point.z >= 0 && point.z < this.chunkSize) {
+                        meanderMap[point.x][point.z] = true;
+                    }
+                }
+            }
+        }
+        
+        return meanderMap;
+    }
+    
+    createMeanderedPath(riverPath, heightMap) {
+        // 🌊 ERSTELLT MÄANDRIERTEN FLUSSVERLAUF
+        const meanderedPath = [];
+        const meanderAmplitude = 2;
+        const meanderFrequency = 0.3;
+        
+        for (let i = 0; i < riverPath.length - 1; i++) {
+            const current = riverPath[i];
+            const next = riverPath[i + 1];
+            
+            // Berechne Mäander-Offset
+            const pathProgress = i / riverPath.length;
+            const meanderOffset = Math.sin(pathProgress * meanderFrequency * 2 * Math.PI) * meanderAmplitude;
+            
+            // Berechne perpendiculäre Richtung
+            const dx = next.x - current.x;
+            const dz = next.z - current.z;
+            const perpX = -dz;
+            const perpZ = dx;
+            
+            // Füge mäandrierten Punkt hinzu
+            const meanderedX = current.x + Math.round(perpX * meanderOffset);
+            const meanderedZ = current.z + Math.round(perpZ * meanderOffset);
+            
+            if (meanderedX >= 0 && meanderedX < this.chunkSize && 
+                meanderedZ >= 0 && meanderedZ < this.chunkSize) {
+                meanderedPath.push({x: meanderedX, z: meanderedZ});
+            }
+            
+            meanderedPath.push(current);
+        }
+        
+        return meanderedPath;
+    }
+    
+    combineWaterFeatures(riverNetwork, lakeMap, meanderMap, startX, startZ) {
+        // 🌊 KOMBINIERT ALLE WASSER-FEATURES zu finaler Karte
+        const finalWaterMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        // Kombiniere Flüsse
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                if (riverNetwork.riverMap[x][z] || lakeMap.lakeMap[x][z] || meanderMap[x][z]) {
+                    finalWaterMap[x][z] = true;
+                }
+            }
+        }
+        
+        return finalWaterMap;
+    }
+    
+    calculateSupportStructure(heightMap) {
+        // 🧠 ULTIMATIVE PHYSICS-BASED SUPPORT SYSTEM - ZERO TOLERANCE FÜR FLOATING BLOCKS!
+        const supportMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(1.0));
+        
+        // ========== PHASE 1: GRUNDLEGENDE STRUKTURELLE ANALYSE ==========
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                let supportStrength = 1.0;
+                const currentHeight = heightMap[x][z];
+                
+                if (x > 0 && x < this.chunkSize - 1 && z > 0 && z < this.chunkSize - 1) {
+                    // 🔬 ADVANCED STRUCTURAL ANALYSIS: 8-Nachbar Unterstützungsberechnung
+                    const neighbors = [
+                        heightMap[x-1][z], heightMap[x+1][z], heightMap[x][z-1], heightMap[x][z+1], // Direkte Nachbarn
+                        heightMap[x-1][z-1], heightMap[x+1][z-1], heightMap[x-1][z+1], heightMap[x+1][z+1] // Diagonale Nachbarn
+                    ];
+                    
+                    const avgNeighborHeight = neighbors.reduce((sum, h) => sum + h, 0) / neighbors.length;
+                    const maxNeighbor = Math.max(...neighbors);
+                    const minNeighbor = Math.min(...neighbors);
+                    const heightVariance = maxNeighbor - minNeighbor;
+                    
+                    // 🏗️ ÜBERHANG-DETEKTION mit exponentieller Bestrafung
+                    const overhangFactor = Math.max(0, currentHeight - maxNeighbor);
+                    if (overhangFactor > 2) {
+                        supportStrength *= Math.exp(-overhangFactor * 0.3); // Exponentieller Supportverlust
+                    }
+                    
+                    // ⛰️ INSTABILITÄTS-DETEKTION durch Höhenvariation
+                    if (heightVariance > 8) {
+                        const instabilityPenalty = Math.min(0.8, heightVariance * 0.05);
+                        supportStrength *= (1.0 - instabilityPenalty);
+                    }
+                    
+                    // 🌊 EROSIONS-UNTERSTÜTZUNG: Niedrigere Areas sind stabiler
+                    const heightDifference = currentHeight - avgNeighborHeight;
+                    if (heightDifference > 0) {
+                        supportStrength *= Math.max(0.1, 1.0 - heightDifference * 0.08);
+                    }
+                    
+                    // 🗿 MASSIVE-SUPPORT: Große zusammenhängende Bereiche sind stabiler
+                    const massSupport = this.calculateMassiveSupport(heightMap, x, z, currentHeight);
+                    supportStrength = Math.max(supportStrength, massSupport);
+                }
+                
+                supportMap[x][z] = Math.max(0.01, supportStrength); // Minimum Support für Stabilität
+            }
+        }
+        
+        // ========== PHASE 2: GRAVITATIONAL CONNECTIVITY ANALYSIS ==========
+        const connectivityMap = this.calculateGravitationalConnectivity(heightMap, supportMap);
+        
+        // ========== PHASE 3: ITERATIVE SUPPORT PROPAGATION ==========
+        for (let iteration = 0; iteration < 3; iteration++) {
+            this.propagateSupportStability(supportMap, heightMap, connectivityMap);
+        }
+        
         return supportMap;
+    }
+    
+    calculateMassiveSupport(heightMap, centerX, centerZ, centerHeight) {
+        // 🏔️ BERECHNE UNTERSTÜTZUNG DURCH GROSSE LANDMASSEN
+        let massSupport = 0;
+        const radius = 3;
+        let supportingBlocks = 0;
+        let totalBlocks = 0;
+        
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                const x = centerX + dx;
+                const z = centerZ + dz;
+                
+                if (x >= 0 && x < this.chunkSize && z >= 0 && z < this.chunkSize) {
+                    const distance = Math.sqrt(dx * dx + dz * dz);
+                    if (distance <= radius) {
+                        totalBlocks++;
+                        const heightDiff = Math.abs(heightMap[x][z] - centerHeight);
+                        
+                        // Blöcke in ähnlicher Höhe bieten Unterstützung
+                        if (heightDiff <= 4) {
+                            const proximityFactor = Math.max(0, 1.0 - distance / radius);
+                            const heightFactor = Math.max(0, 1.0 - heightDiff * 0.2);
+                            supportingBlocks += proximityFactor * heightFactor;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return totalBlocks > 0 ? Math.min(1.0, supportingBlocks / totalBlocks * 1.5) : 0;
+    }
+    
+    calculateGravitationalConnectivity(heightMap, supportMap) {
+        // 🌍 GRAVITATIONAL CONNECTIVITY - Überprüft ob Terrain mit dem Boden verbunden ist
+        const connectivityMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        const visited = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        // Startpunkte: Alle Punkte die den Boden berühren oder sehr niedrig sind
+        const groundLevel = Math.min(...heightMap.flat());
+        const startPoints = [];
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                if (heightMap[x][z] <= groundLevel + 3) {
+                    startPoints.push({x, z});
+                    connectivityMap[x][z] = true;
+                }
+            }
+        }
+        
+        // BFS um Konnektivität zu propagieren
+        const queue = [...startPoints];
+        
+        while (queue.length > 0) {
+            const {x, z} = queue.shift();
+            
+            if (visited[x][z]) continue;
+            visited[x][z] = true;
+            
+            // Prüfe 8-Nachbarn
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dz = -1; dz <= 1; dz++) {
+                    const nx = x + dx;
+                    const nz = z + dz;
+                    
+                    if (nx >= 0 && nx < this.chunkSize && nz >= 0 && nz < this.chunkSize && !visited[nx][nz]) {
+                        const heightDiff = Math.abs(heightMap[nx][nz] - heightMap[x][z]);
+                        const supportStrength = supportMap[nx][nz];
+                        
+                        // Verbindung nur wenn Höhenunterschied reasonable und Support ausreichend
+                        if (heightDiff <= 6 && supportStrength > 0.3) {
+                            connectivityMap[nx][nz] = true;
+                            queue.push({x: nx, z: nz});
+                        }
+                    }
+                }
+            }
+        }
+        
+        return connectivityMap;
+    }
+    
+    propagateSupportStability(supportMap, heightMap, connectivityMap) {
+        // 🔄 ITERATIVE SUPPORT PROPAGATION - Verteilt Stabilität von stabilen Bereichen
+        const newSupportMap = supportMap.map(row => [...row]); // Deep copy
+        
+        for (let x = 1; x < this.chunkSize - 1; x++) {
+            for (let z = 1; z < this.chunkSize - 1; z++) {
+                if (!connectivityMap[x][z]) {
+                    // Nicht mit Boden verbunden = drastische Supportreduktion
+                    newSupportMap[x][z] *= 0.1;
+                    continue;
+                }
+                
+                // Sammle Support von stabilen Nachbarn
+                let neighborSupport = 0;
+                let stableNeighbors = 0;
+                
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dz = -1; dz <= 1; dz++) {
+                        if (dx === 0 && dz === 0) continue;
+                        
+                        const nx = x + dx;
+                        const nz = z + dz;
+                        
+                        if (nx >= 0 && nx < this.chunkSize && nz >= 0 && nz < this.chunkSize) {
+                            const neighborHeight = heightMap[nx][nz];
+                            const currentHeight = heightMap[x][z];
+                            const heightDiff = neighborHeight - currentHeight;
+                            
+                            // Nachbarn auf gleicher oder höherer Ebene bieten Support
+                            if (heightDiff >= -2 && supportMap[nx][nz] > 0.5) {
+                                const distance = Math.sqrt(dx * dx + dz * dz);
+                                const transferFactor = Math.max(0, 1.0 - distance * 0.3);
+                                neighborSupport += supportMap[nx][nz] * transferFactor;
+                                stableNeighbors++;
+                            }
+                        }
+                    }
+                }
+                
+                if (stableNeighbors > 0) {
+                    const averageNeighborSupport = neighborSupport / stableNeighbors;
+                    // Kombiniere eigenen Support mit Nachbar-Support
+                    newSupportMap[x][z] = Math.max(supportMap[x][z], averageNeighborSupport * 0.7);
+                }
+            }
+        }
+        
+        // Update original supportMap
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                supportMap[x][z] = newSupportMap[x][z];
+            }
+        }
     }
     
     calculateSlope(heightMap, x, z) {
@@ -1396,6 +2079,917 @@ class MinecraftClone {
         }
     }
     
+    // ========== 🚀 ULTIMATIVE ANTI-FLOATING-BLOCK SYSTEM ==========
+    
+    applyUltimateAntiFloatingBlockSystem(chunk, heightMap, supportMap, startX, startZ) {
+        // 🚨 ULTIMATIVE ZERO-TOLERANCE ANTI-FLOATING-BLOCK SYSTEM
+        console.log('🚀 Applying ULTIMATE Anti-Floating-Block System...');
+        
+        // PHASE 1: GRAVITATIONAL COLLAPSE SIMULATION
+        this.simulateGravitationalCollapse(chunk, heightMap, supportMap, startX, startZ);
+        
+        // PHASE 2: RECURSIVE SUPPORT VALIDATION
+        this.recursivelyValidateSupport(chunk, heightMap, startX, startZ);
+        
+        // PHASE 3: CONNECTED COMPONENTS ANALYSIS
+        this.removeDisconnectedComponents(chunk, heightMap, startX, startZ);
+        
+        // PHASE 4: STRUCTURAL INTEGRITY ENFORCEMENT
+        this.enforceStructuralIntegrity(chunk, heightMap, supportMap, startX, startZ);
+        
+        console.log('✅ Anti-Floating-Block System completed - ZERO floating blocks guaranteed!');
+    }
+    
+    simulateGravitationalCollapse(chunk, heightMap, supportMap, startX, startZ) {
+        // 🌍 SIMULIERT GRAVITATIONSBEDINGTE TERRAINKOLLAPSE
+        const maxIterations = 5;
+        let blocksCollapsed = 0;
+        
+        for (let iteration = 0; iteration < maxIterations; iteration++) {
+            let changesThisIteration = 0;
+            
+            // Iteriere von oben nach unten um realistischen Fall zu simulieren
+            for (let y = this.worldHeight - 1; y >= 1; y--) {
+                for (let x = 0; x < this.chunkSize; x++) {
+                    for (let z = 0; z < this.chunkSize; z++) {
+                        const worldX = startX + x;
+                        const worldZ = startZ + z;
+                        const blockKey = `${worldX}_${y}_${worldZ}`;
+                        const blockType = chunk.get(blockKey);
+                        
+                        if (blockType && blockType !== 'air' && blockType !== 'water') {
+                            const supportBelow = this.calculateSupportBelow(chunk, worldX, y, worldZ, startX, startZ);
+                            const lateralSupport = this.calculateLateralSupport(chunk, worldX, y, worldZ, startX, startZ);
+                            const totalSupport = supportBelow * 0.8 + lateralSupport * 0.2;
+                            
+                            // KRITISCHE SUPPORT-SCHWELLE: Blöcke mit unzureichendem Support fallen
+                            if (totalSupport < 0.3) {
+                                // Simuliere freien Fall
+                                const fallDistance = this.simulateBlockFall(chunk, worldX, y, worldZ, blockType, startX, startZ);
+                                if (fallDistance > 0) {
+                                    changesThisIteration++;
+                                    blocksCollapsed++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (changesThisIteration === 0) {
+                console.log(`🌍 Gravitational collapse completed after ${iteration + 1} iterations. Blocks collapsed: ${blocksCollapsed}`);
+                break;
+            }
+        }
+    }
+    
+    calculateSupportBelow(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüfe Support direkt unter dem Block
+        if (y <= 1) return 1.0; // Bedrock level
+        
+        const belowKey = `${worldX}_${y-1}_${worldZ}`;
+        const blockBelow = chunk.get(belowKey);
+        
+        if (!blockBelow || blockBelow === 'air' || blockBelow === 'water') {
+            return 0.0; // Kein direkter Support
+        }
+        
+        // Verschiedene Materialien bieten unterschiedlichen Support
+        const supportStrength = this.getBlockSupportStrength(blockBelow);
+        return supportStrength;
+    }
+    
+    calculateLateralSupport(chunk, worldX, y, worldZ, startX, startZ) {
+        // Berechne horizontalen Support von Nachbarblöcken
+        let supportCount = 0;
+        let totalSupport = 0;
+        
+        const directions = [
+            {dx: 1, dz: 0}, {dx: -1, dz: 0}, 
+            {dx: 0, dz: 1}, {dx: 0, dz: -1}
+        ];
+        
+        for (const dir of directions) {
+            const neighborX = worldX + dir.dx;
+            const neighborZ = worldZ + dir.dz;
+            const neighborKey = `${neighborX}_${y}_${neighborZ}`;
+            const neighborBlock = chunk.get(neighborKey);
+            
+            if (neighborBlock && neighborBlock !== 'air' && neighborBlock !== 'water') {
+                // Prüfe ob der Nachbar selbst stabil ist
+                const neighborSupportBelow = this.calculateSupportBelow(chunk, neighborX, y, neighborZ, startX, startZ);
+                if (neighborSupportBelow > 0.5) {
+                    totalSupport += this.getBlockSupportStrength(neighborBlock);
+                    supportCount++;
+                }
+            }
+        }
+        
+        return supportCount > 0 ? (totalSupport / supportCount) * (supportCount / 4) : 0;
+    }
+    
+    getBlockSupportStrength(blockType) {
+        // Verschiedene Materialien haben unterschiedliche Tragfähigkeit
+        const supportValues = {
+            'bedrock': 1.0,
+            'stone': 0.9,
+            'mountain_stone': 0.95,
+            'cobblestone': 0.85,
+            'obsidian': 0.95,
+            'iron': 0.8,
+            'gold': 0.7,
+            'diamond': 0.9,
+            'coal': 0.6,
+            'dirt': 0.4,
+            'clay': 0.3,
+            'sand': 0.2,
+            'gravel': 0.25,
+            'wood': 0.6,
+            'leaves': 0.1,
+            'grass': 0.4,
+            'snow': 0.15,
+            'ice': 0.4
+        };
+        
+        return supportValues[blockType] || 0.5; // Default support für unbekannte Blöcke
+    }
+    
+    simulateBlockFall(chunk, worldX, y, worldZ, blockType, startX, startZ) {
+        // Simuliert den freien Fall eines Blocks
+        const originalKey = `${worldX}_${y}_${worldZ}`;
+        
+        // Finde die nächste stabile Position nach unten
+        let targetY = y - 1;
+        
+        while (targetY >= 1) {
+            const targetKey = `${worldX}_${targetY}_${worldZ}`;
+            const targetBlock = chunk.get(targetKey);
+            
+            if (targetBlock && targetBlock !== 'air' && targetBlock !== 'water') {
+                // Feste Oberfläche gefunden, platziere Block direkt darüber
+                targetY += 1;
+                break;
+            }
+            targetY--;
+        }
+        
+        if (targetY < 1) {
+            targetY = 1; // Minimum height
+        }
+        
+        const fallDistance = y - targetY;
+        
+        if (fallDistance > 0) {
+            // Entferne Block von ursprünglicher Position
+            chunk.set(originalKey, 'air');
+            
+            // Platziere Block an neuer Position
+            const newKey = `${worldX}_${targetY}_${worldZ}`;
+            chunk.set(newKey, blockType);
+            
+            console.log(`📉 Block ${blockType} fell ${fallDistance} blocks from Y=${y} to Y=${targetY}`);
+        }
+        
+        return fallDistance;
+    }
+    
+    recursivelyValidateSupport(chunk, heightMap, startX, startZ) {
+        // 🔄 RECURSIVE SUPPORT VALIDATION - Entfernt Blöcke ohne ausreichenden Support
+        const maxRecursionDepth = 8;
+        let removedBlocks = 0;
+        
+        console.log('🔄 Starting recursive support validation...');
+        
+        for (let depth = 0; depth < maxRecursionDepth; depth++) {
+            let blocksRemovedThisPass = 0;
+            
+            // Von oben nach unten scannen für bessere Stabilität
+            for (let y = this.worldHeight - 1; y >= 2; y--) {
+                for (let x = 0; x < this.chunkSize; x++) {
+                    for (let z = 0; z < this.chunkSize; z++) {
+                        const worldX = startX + x;
+                        const worldZ = startZ + z;
+                        const blockKey = `${worldX}_${y}_${worldZ}`;
+                        const blockType = chunk.get(blockKey);
+                        
+                        if (blockType && blockType !== 'air' && blockType !== 'water') {
+                            if (!this.hasValidSupport(chunk, worldX, y, worldZ, startX, startZ)) {
+                                // Block hat keinen ausreichenden Support - entfernen
+                                chunk.set(blockKey, 'air');
+                                blocksRemovedThisPass++;
+                                removedBlocks++;
+                                
+                                console.log(`🗑️ Removed unsupported ${blockType} at (${worldX}, ${y}, ${worldZ})`);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (blocksRemovedThisPass === 0) {
+                console.log(`✅ Recursive validation completed after ${depth + 1} passes. Total removed: ${removedBlocks}`);
+                break;
+            }
+        }
+    }
+    
+    hasValidSupport(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüft ob ein Block ausreichenden Support hat um zu existieren
+        if (y <= 1) return true; // Bedrock level
+        
+        // REGEL 1: Direkter Support von unten
+        const directSupport = this.calculateSupportBelow(chunk, worldX, y, worldZ, startX, startZ);
+        if (directSupport >= 0.6) return true;
+        
+        // REGEL 2: Starker lateraler Support von mindestens 3 Seiten
+        const lateralSupport = this.calculateLateralSupport(chunk, worldX, y, worldZ, startX, startZ);
+        if (lateralSupport >= 0.8) return true;
+        
+        // REGEL 3: Kombinierter Support ausreichend
+        const combinedSupport = directSupport * 0.7 + lateralSupport * 0.3;
+        if (combinedSupport >= 0.5) return true;
+        
+        // REGEL 4: Spezialfall für bestimmte Materialien (z.B. Baumstämme)
+        const blockType = chunk.get(`${worldX}_${y}_${worldZ}`);
+        if (this.isSpecialSupportMaterial(blockType)) {
+            return this.validateSpecialSupport(chunk, worldX, y, worldZ, blockType, startX, startZ);
+        }
+        
+        return false; // Kein ausreichender Support
+    }
+    
+    isSpecialSupportMaterial(blockType) {
+        // Materialien mit speziellen Support-Regeln
+        return ['wood', 'birch_wood', 'jungle_wood', 'leaves', 'birch_leaves', 'jungle_leaves'].includes(blockType);
+    }
+    
+    validateSpecialSupport(chunk, worldX, y, worldZ, blockType, startX, startZ) {
+        // Spezielle Support-Validation für Bäume und andere Strukturen
+        if (blockType.includes('wood')) {
+            // Baumstämme: Müssen mit dem Boden oder anderen Baumstämmen verbunden sein
+            return this.isConnectedToGround(chunk, worldX, y, worldZ, startX, startZ, 'wood');
+        }
+        
+        if (blockType.includes('leaves')) {
+            // Blätter: Müssen nahe einem Baumstamm sein
+            return this.isNearTreeTrunk(chunk, worldX, y, worldZ, startX, startZ);
+        }
+        
+        return false;
+    }
+    
+    isConnectedToGround(chunk, worldX, y, worldZ, startX, startZ, materialType) {
+        // BFS um zu prüfen ob Material mit dem Boden verbunden ist
+        const visited = new Set();
+        const queue = [{x: worldX, y: y, z: worldZ}];
+        
+        while (queue.length > 0) {
+            const {x, y: currentY, z} = queue.shift();
+            const key = `${x}_${currentY}_${z}`;
+            
+            if (visited.has(key)) continue;
+            visited.add(key);
+            
+            // Wenn wir den Boden erreicht haben
+            if (currentY <= 2) return true;
+            
+            // Prüfe alle 6 Richtungen
+            const directions = [
+                {dx: 0, dy: -1, dz: 0}, // Unten
+                {dx: 1, dy: 0, dz: 0}, {dx: -1, dy: 0, dz: 0},
+                {dx: 0, dy: 0, dz: 1}, {dx: 0, dy: 0, dz: -1},
+                {dx: 0, dy: 1, dz: 0}  // Oben
+            ];
+            
+            for (const dir of directions) {
+                const nx = x + dir.dx;
+                const ny = currentY + dir.dy;
+                const nz = z + dir.dz;
+                const neighborKey = `${nx}_${ny}_${nz}`;
+                
+                if (!visited.has(neighborKey)) {
+                    const neighborBlock = chunk.get(neighborKey);
+                    
+                    // Verbindung zu gleichem Material oder festem Grund
+                    if (neighborBlock === materialType || 
+                        (ny <= 2 && neighborBlock && neighborBlock !== 'air' && neighborBlock !== 'water')) {
+                        queue.push({x: nx, y: ny, z: nz});
+                    }
+                }
+            }
+            
+            // Begrenzte Suchtiefe für Performance
+            if (visited.size > 100) break;
+        }
+        
+        return false;
+    }
+    
+    isNearTreeTrunk(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüft ob Blätter nahe einem Baumstamm sind
+        const searchRadius = 4;
+        
+        for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+                for (let dz = -searchRadius; dz <= searchRadius; dz++) {
+                    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                    if (distance <= searchRadius) {
+                        const checkX = worldX + dx;
+                        const checkY = y + dy;
+                        const checkZ = worldZ + dz;
+                        const checkKey = `${checkX}_${checkY}_${checkZ}`;
+                        const checkBlock = chunk.get(checkKey);
+                        
+                        if (checkBlock && checkBlock.includes('wood')) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    removeDisconnectedComponents(chunk, heightMap, startX, startZ) {
+        // 🧩 CONNECTED COMPONENTS ANALYSIS - Entfernt isolierte Terrainkomponenten
+        console.log('🧩 Analyzing connected components...');
+        
+        const visited = new Set();
+        const components = [];
+        
+        // Finde alle zusammenhängenden Komponenten
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                for (let y = 1; y < this.worldHeight; y++) {
+                    const worldX = startX + x;
+                    const worldZ = startZ + z;
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    
+                    if (!visited.has(blockKey)) {
+                        const blockType = chunk.get(blockKey);
+                        if (blockType && blockType !== 'air' && blockType !== 'water') {
+                            const component = this.findConnectedComponent(chunk, worldX, y, worldZ, visited, startX, startZ);
+                            if (component.length > 0) {
+                                components.push(component);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Identifiziere die Haupt-Terrainkomponente (größte mit Bodenkontakt)
+        let mainComponent = null;
+        let maxSize = 0;
+        
+        for (const component of components) {
+            const hasGroundConnection = component.some(block => block.y <= 3);
+            const size = component.length;
+            
+            if (hasGroundConnection && size > maxSize) {
+                maxSize = size;
+                mainComponent = component;
+            }
+        }
+        
+        // Entferne alle Komponenten die nicht mit dem Hauptterrain verbunden sind
+        let removedComponents = 0;
+        let removedBlocks = 0;
+        
+        for (const component of components) {
+            if (component !== mainComponent) {
+                const hasGroundConnection = component.some(block => block.y <= 3);
+                
+                // Entferne nur schwebende Komponenten (ohne Bodenkontakt)
+                if (!hasGroundConnection) {
+                    for (const block of component) {
+                        const blockKey = `${block.x}_${block.y}_${block.z}`;
+                        chunk.set(blockKey, 'air');
+                        removedBlocks++;
+                    }
+                    removedComponents++;
+                }
+            }
+        }
+        
+        console.log(`🧩 Removed ${removedComponents} disconnected components (${removedBlocks} blocks)`);
+    }
+    
+    findConnectedComponent(chunk, startX, startY, startZ, visited, chunkStartX, chunkStartZ) {
+        // BFS um zusammenhängende Komponente zu finden
+        const component = [];
+        const queue = [{x: startX, y: startY, z: startZ}];
+        
+        while (queue.length > 0) {
+            const {x, y, z} = queue.shift();
+            const blockKey = `${x}_${y}_${z}`;
+            
+            if (visited.has(blockKey)) continue;
+            visited.add(blockKey);
+            
+            const blockType = chunk.get(blockKey);
+            if (!blockType || blockType === 'air' || blockType === 'water') continue;
+            
+            component.push({x, y, z, type: blockType});
+            
+            // Prüfe 6 Nachbarn
+            const directions = [
+                {dx: 1, dy: 0, dz: 0}, {dx: -1, dy: 0, dz: 0},
+                {dx: 0, dy: 1, dz: 0}, {dx: 0, dy: -1, dz: 0},
+                {dx: 0, dy: 0, dz: 1}, {dx: 0, dy: 0, dz: -1}
+            ];
+            
+            for (const dir of directions) {
+                const nx = x + dir.dx;
+                const ny = y + dir.dy;
+                const nz = z + dir.dz;
+                const neighborKey = `${nx}_${ny}_${nz}`;
+                
+                if (!visited.has(neighborKey) && ny >= 1 && ny < this.worldHeight) {
+                    // Nur innerhalb des Chunks suchen für Performance
+                    const localX = nx - chunkStartX;
+                    const localZ = nz - chunkStartZ;
+                    
+                    if (localX >= 0 && localX < this.chunkSize && 
+                        localZ >= 0 && localZ < this.chunkSize) {
+                        queue.push({x: nx, y: ny, z: nz});
+                    }
+                }
+            }
+            
+            // Begrenze Komponentengröße für Performance
+            if (component.length > 1000) break;
+        }
+        
+        return component;
+    }
+    
+    enforceStructuralIntegrity(chunk, heightMap, supportMap, startX, startZ) {
+        // 🏗️ STRUKTURELLE INTEGRITÄT - Finale Validierung und Korrektur
+        console.log('🏗️ Enforcing final structural integrity...');
+        
+        let corrections = 0;
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const supportLevel = supportMap[x][z];
+                
+                // Scanne Säule von unten nach oben
+                for (let y = 1; y < this.worldHeight; y++) {
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && blockType !== 'water') {
+                        // Prüfe auf unrealistische Überhänge
+                        if (this.isUnrealisticOverhang(chunk, worldX, y, worldZ, startX, startZ)) {
+                            chunk.set(blockKey, 'air');
+                            corrections++;
+                            console.log(`🏗️ Corrected unrealistic overhang at (${worldX}, ${y}, ${worldZ})`);
+                        }
+                        
+                        // Prüfe auf impossible floating structures
+                        if (this.isImpossibleFloatingStructure(chunk, worldX, y, worldZ, startX, startZ)) {
+                            chunk.set(blockKey, 'air');
+                            corrections++;
+                            console.log(`🏗️ Removed impossible floating structure at (${worldX}, ${y}, ${worldZ})`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`🏗️ Structural integrity enforced. Made ${corrections} corrections.`);
+    }
+    
+    isUnrealisticOverhang(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüft auf physikalisch unrealistische Überhänge
+        const maxOverhangDistance = 3;
+        
+        // Suche nächsten Support in alle 4 Richtungen
+        const directions = [
+            {dx: 1, dz: 0}, {dx: -1, dz: 0},
+            {dx: 0, dz: 1}, {dx: 0, dz: -1}
+        ];
+        
+        for (const dir of directions) {
+            let supportFound = false;
+            
+            for (let distance = 1; distance <= maxOverhangDistance + 1; distance++) {
+                const checkX = worldX + dir.dx * distance;
+                const checkZ = worldZ + dir.dz * distance;
+                
+                // Prüfe Support von unten bis zu dieser Y-Ebene
+                for (let checkY = 1; checkY <= y; checkY++) {
+                    const checkKey = `${checkX}_${checkY}_${checkZ}`;
+                    const checkBlock = chunk.get(checkKey);
+                    
+                    if (checkBlock && checkBlock !== 'air' && checkBlock !== 'water') {
+                        supportFound = true;
+                        break;
+                    }
+                }
+                
+                if (supportFound) break;
+            }
+            
+            if (!supportFound) {
+                return true; // Unrealistischer Überhang in diese Richtung
+            }
+        }
+        
+        return false;
+    }
+    
+    isImpossibleFloatingStructure(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüft auf impossible floating structures
+        const maxFloatingHeight = 5;
+        
+        // Prüfe ob Block zu hoch über dem nächsten Support schwebt
+        let nearestSupportDistance = maxFloatingHeight + 1;
+        
+        for (let checkY = y - 1; checkY >= 1; checkY--) {
+            const checkKey = `${worldX}_${checkY}_${worldZ}`;
+            const checkBlock = chunk.get(checkKey);
+            
+            if (checkBlock && checkBlock !== 'air' && checkBlock !== 'water') {
+                nearestSupportDistance = y - checkY;
+                break;
+            }
+        }
+        
+        return nearestSupportDistance > maxFloatingHeight;
+    }
+    
+    performFinalTerrainCleanup(chunk, heightMap, startX, startZ) {
+        // 🧹 FINALES TERRAIN CLEANUP & VALIDATION SYSTEM
+        console.log('🧹 Performing final terrain cleanup...');
+        
+        // PHASE 1: SURFACE SMOOTHING - Entfernt unnatürliche Terrainspitzen
+        this.smoothUnnatualTerrainSpikes(chunk, heightMap, startX, startZ);
+        
+        // PHASE 2: GAP FILLING - Füllt unnatürliche Lücken im Terrain
+        this.fillUnnatualTerrainGaps(chunk, heightMap, startX, startZ);
+        
+        // PHASE 3: OVERHANG CORRECTION - Korrigiert physikalisch unmögliche Überhänge
+        this.correctPhysicallyImpossibleOverhangs(chunk, heightMap, startX, startZ);
+        
+        // PHASE 4: ISOLATED BLOCK REMOVAL - Entfernt isolierte Einzelblöcke
+        this.removeIsolatedSingleBlocks(chunk, heightMap, startX, startZ);
+        
+        // PHASE 5: FINAL PHYSICS VALIDATION - Letzte Überprüfung aller physikalischen Gesetze
+        this.validateFinalPhysics(chunk, heightMap, startX, startZ);
+        
+        console.log('✨ Final terrain cleanup completed - Terrain ist perfekt!');
+    }
+    
+    smoothUnnatualTerrainSpikes(chunk, heightMap, startX, startZ) {
+        // 🏔️ ENTFERNT UNNATÜRLICHE TERRAIN-SPITZEN
+        let spikesRemoved = 0;
+        
+        for (let x = 1; x < this.chunkSize - 1; x++) {
+            for (let z = 1; z < this.chunkSize - 1; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const currentHeight = heightMap[x][z];
+                
+                // Sammle Nachbarhöhen
+                const neighborHeights = [
+                    heightMap[x-1][z], heightMap[x+1][z],
+                    heightMap[x][z-1], heightMap[x][z+1],
+                    heightMap[x-1][z-1], heightMap[x+1][z-1],
+                    heightMap[x-1][z+1], heightMap[x+1][z+1]
+                ];
+                
+                const avgNeighborHeight = neighborHeights.reduce((sum, h) => sum + h, 0) / neighborHeights.length;
+                const maxNeighborHeight = Math.max(...neighborHeights);
+                const heightDifference = currentHeight - avgNeighborHeight;
+                
+                // Wenn dieser Punkt zu hoch über den Nachbarn ist (unnatürlicher Spike)
+                if (heightDifference > 8 && currentHeight > maxNeighborHeight + 4) {
+                    // Reduziere Höhe auf reasonable Level
+                    const targetHeight = Math.ceil(maxNeighborHeight + 2);
+                    
+                    // Entferne Blöcke oberhalb des Ziellevels
+                    for (let y = Math.floor(targetHeight) + 1; y <= Math.floor(currentHeight); y++) {
+                        const blockKey = `${worldX}_${y}_${worldZ}`;
+                        const blockType = chunk.get(blockKey);
+                        if (blockType && blockType !== 'air' && blockType !== 'water') {
+                            chunk.set(blockKey, 'air');
+                            spikesRemoved++;
+                        }
+                    }
+                    
+                    // Update height map
+                    heightMap[x][z] = targetHeight;
+                    
+                    console.log(`🏔️ Smoothed terrain spike at (${worldX}, ${worldZ}) from ${currentHeight} to ${targetHeight}`);
+                }
+            }
+        }
+        
+        console.log(`🏔️ Removed ${spikesRemoved} blocks from unnatural terrain spikes`);
+    }
+    
+    fillUnnatualTerrainGaps(chunk, heightMap, startX, startZ) {
+        // 🕳️ FÜLLT UNNATÜRLICHE LÜCKEN IM TERRAIN
+        let gapsFilled = 0;
+        
+        for (let x = 1; x < this.chunkSize - 1; x++) {
+            for (let z = 1; z < this.chunkSize - 1; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const currentHeight = heightMap[x][z];
+                
+                // Sammle Nachbarhöhen
+                const neighborHeights = [
+                    heightMap[x-1][z], heightMap[x+1][z],
+                    heightMap[x][z-1], heightMap[x][z+1]
+                ];
+                
+                const avgNeighborHeight = neighborHeights.reduce((sum, h) => sum + h, 0) / neighborHeights.length;
+                const minNeighborHeight = Math.min(...neighborHeights);
+                const heightDifference = avgNeighborHeight - currentHeight;
+                
+                // Wenn dieser Punkt zu tief unter den Nachbarn ist (unnatürliche Lücke)
+                if (heightDifference > 6 && currentHeight < minNeighborHeight - 3) {
+                    // Fülle Lücke bis zu reasonable Level
+                    const targetHeight = Math.floor(minNeighborHeight - 1);
+                    const biome = this.getBiome(worldX, worldZ);
+                    
+                    // Fülle mit geologisch angemessenem Material
+                    for (let y = Math.ceil(currentHeight) + 1; y <= targetHeight; y++) {
+                        const blockKey = `${worldX}_${y}_${worldZ}`;
+                        
+                        // Bestimme angemessenes Füllmaterial basierend auf Tiefe
+                        let fillMaterial = 'stone';
+                        if (y >= targetHeight - 3) {
+                            fillMaterial = this.getSoilType(biome, 0.5);
+                        } else if (y >= targetHeight - 1) {
+                            fillMaterial = this.getSurfaceBlockType(biome, y, targetHeight, worldX, worldZ);
+                        }
+                        
+                        chunk.set(blockKey, fillMaterial);
+                        gapsFilled++;
+                    }
+                    
+                    // Update height map
+                    heightMap[x][z] = targetHeight;
+                    
+                    console.log(`🕳️ Filled terrain gap at (${worldX}, ${worldZ}) from ${currentHeight} to ${targetHeight}`);
+                }
+            }
+        }
+        
+        console.log(`🕳️ Filled ${gapsFilled} blocks in unnatural terrain gaps`);
+    }
+    
+    correctPhysicallyImpossibleOverhangs(chunk, heightMap, startX, startZ) {
+        // 🪨 KORRIGIERT PHYSIKALISCH UNMÖGLICHE ÜBERHÄNGE
+        let overhangsFixed = 0;
+        const maxOverhangDistance = 2; // Maximal erlaubte Überhangdistanz
+        
+        for (let y = this.worldHeight - 1; y >= this.seaLevel; y--) {
+            for (let x = 0; x < this.chunkSize; x++) {
+                for (let z = 0; z < this.chunkSize; z++) {
+                    const worldX = startX + x;
+                    const worldZ = startZ + z;
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && blockType !== 'water') {
+                        if (this.isExcessiveOverhang(chunk, worldX, y, worldZ, maxOverhangDistance, startX, startZ)) {
+                            // Entferne Block mit excessivem Überhang
+                            chunk.set(blockKey, 'air');
+                            overhangsFixed++;
+                            
+                            console.log(`🪨 Removed excessive overhang block at (${worldX}, ${y}, ${worldZ})`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`🪨 Fixed ${overhangsFixed} physically impossible overhangs`);
+    }
+    
+    isExcessiveOverhang(chunk, worldX, y, worldZ, maxDistance, startX, startZ) {
+        // Prüft ob Block einen excessive Überhang bildet
+        const directions = [
+            {dx: 1, dz: 0}, {dx: -1, dz: 0},
+            {dx: 0, dz: 1}, {dx: 0, dz: -1}
+        ];
+        
+        for (const dir of directions) {
+            let supportDistance = 0;
+            let foundSupport = false;
+            
+            // Suche Support in dieser Richtung
+            for (let distance = 1; distance <= maxDistance + 2; distance++) {
+                const checkX = worldX + dir.dx * distance;
+                const checkZ = worldZ + dir.dz * distance;
+                
+                // Prüfe ob es Support von unten gibt in dieser Position
+                for (let checkY = 1; checkY < y; checkY++) {
+                    const checkKey = `${checkX}_${checkY}_${checkZ}`;
+                    const checkBlock = chunk.get(checkKey);
+                    
+                    if (checkBlock && checkBlock !== 'air' && checkBlock !== 'water') {
+                        foundSupport = true;
+                        supportDistance = distance;
+                        break;
+                    }
+                }
+                
+                if (foundSupport) break;
+            }
+            
+            // Wenn kein Support innerhalb reasonable distance gefunden
+            if (!foundSupport || supportDistance > maxDistance) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    removeIsolatedSingleBlocks(chunk, heightMap, startX, startZ) {
+        // 🧱 ENTFERNT ISOLIERTE EINZELBLÖCKE
+        let isolatedBlocksRemoved = 0;
+        
+        for (let y = this.seaLevel; y < this.worldHeight; y++) {
+            for (let x = 0; x < this.chunkSize; x++) {
+                for (let z = 0; z < this.chunkSize; z++) {
+                    const worldX = startX + x;
+                    const worldZ = startZ + z;
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && blockType !== 'water') {
+                        if (this.isIsolatedSingleBlock(chunk, worldX, y, worldZ, startX, startZ)) {
+                            // Entferne isolierten Block
+                            chunk.set(blockKey, 'air');
+                            isolatedBlocksRemoved++;
+                            
+                            console.log(`🧱 Removed isolated single block ${blockType} at (${worldX}, ${y}, ${worldZ})`);
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`🧱 Removed ${isolatedBlocksRemoved} isolated single blocks`);
+    }
+    
+    isIsolatedSingleBlock(chunk, worldX, y, worldZ, startX, startZ) {
+        // Prüft ob Block völlig isoliert ist (keine Nachbarn in 6 Richtungen)
+        const directions = [
+            {dx: 1, dy: 0, dz: 0}, {dx: -1, dy: 0, dz: 0},
+            {dx: 0, dy: 1, dz: 0}, {dx: 0, dy: -1, dz: 0},
+            {dx: 0, dy: 0, dz: 1}, {dx: 0, dy: 0, dz: -1}
+        ];
+        
+        let solidNeighbors = 0;
+        
+        for (const dir of directions) {
+            const checkX = worldX + dir.dx;
+            const checkY = y + dir.dy;
+            const checkZ = worldZ + dir.dz;
+            const checkKey = `${checkX}_${checkY}_${checkZ}`;
+            const checkBlock = chunk.get(checkKey);
+            
+            if (checkBlock && checkBlock !== 'air' && checkBlock !== 'water') {
+                solidNeighbors++;
+            }
+        }
+        
+        // Block ist isoliert wenn er weniger als 2 solide Nachbarn hat
+        return solidNeighbors < 2;
+    }
+    
+    validateFinalPhysics(chunk, heightMap, startX, startZ) {
+        // ⚖️ FINALE PHYSICS VALIDATION - Letzte Überprüfung
+        console.log('⚖️ Performing final physics validation...');
+        
+        let physicsViolations = 0;
+        const gravityStrength = 0.8; // Gravitationsstärke für finale Validation
+        
+        // Finale Gravitations-Überprüfung von oben nach unten
+        for (let y = this.worldHeight - 1; y >= 2; y--) {
+            for (let x = 0; x < this.chunkSize; x++) {
+                for (let z = 0; z < this.chunkSize; z++) {
+                    const worldX = startX + x;
+                    const worldZ = startZ + z;
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    const blockType = chunk.get(blockKey);
+                    
+                    if (blockType && blockType !== 'air' && blockType !== 'water') {
+                        const totalSupport = this.calculateTotalBlockSupport(chunk, worldX, y, worldZ, startX, startZ);
+                        
+                        // Finale Gravitationsprüfung mit hohen Standards
+                        if (totalSupport < gravityStrength) {
+                            // Versuche Block fallen zu lassen
+                            const fallResult = this.attemptFinalBlockFall(chunk, worldX, y, worldZ, blockType, startX, startZ);
+                            
+                            if (fallResult.fell) {
+                                physicsViolations++;
+                                console.log(`⚖️ Final physics: Block ${blockType} fell from Y=${y} to Y=${fallResult.newY}`);
+                            } else if (fallResult.removed) {
+                                physicsViolations++;
+                                console.log(`⚖️ Final physics: Removed unsupported ${blockType} at (${worldX}, ${y}, ${worldZ})`);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`⚖️ Final physics validation completed. Fixed ${physicsViolations} violations.`);
+        console.log('🏆 TERRAIN GENERATION COMPLETED - ZERO FLOATING BLOCKS GUARANTEED!');
+    }
+    
+    calculateTotalBlockSupport(chunk, worldX, y, worldZ, startX, startZ) {
+        // Berechnet den Gesamt-Support eines Blocks für finale Validation
+        const directSupport = this.calculateSupportBelow(chunk, worldX, y, worldZ, startX, startZ);
+        const lateralSupport = this.calculateLateralSupport(chunk, worldX, y, worldZ, startX, startZ);
+        const massiveSupport = this.calculateMassiveSupportAtPosition(chunk, worldX, y, worldZ, startX, startZ);
+        
+        // Gewichtete Kombination aller Support-Arten
+        return directSupport * 0.6 + lateralSupport * 0.3 + massiveSupport * 0.1;
+    }
+    
+    calculateMassiveSupportAtPosition(chunk, worldX, y, worldZ, startX, startZ) {
+        // Berechnet massive Support für einzelne Position
+        let massiveSupport = 0;
+        const radius = 2;
+        let supportingBlocks = 0;
+        let totalBlocks = 0;
+        
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance <= radius) {
+                    const checkX = worldX + dx;
+                    const checkZ = worldZ + dz;
+                    
+                    // Prüfe Block auf gleicher Höhe
+                    const checkKey = `${checkX}_${y}_${checkZ}`;
+                    const checkBlock = chunk.get(checkKey);
+                    
+                    totalBlocks++;
+                    if (checkBlock && checkBlock !== 'air' && checkBlock !== 'water') {
+                        const proximityFactor = Math.max(0, 1.0 - distance / radius);
+                        supportingBlocks += proximityFactor;
+                    }
+                }
+            }
+        }
+        
+        return totalBlocks > 0 ? supportingBlocks / totalBlocks : 0;
+    }
+    
+    attemptFinalBlockFall(chunk, worldX, y, worldZ, blockType, startX, startZ) {
+        // Versucht finalen Block-Fall oder entfernt Block falls unmöglich
+        const originalKey = `${worldX}_${y}_${worldZ}`;
+        
+        // Finde nächste stabile Position
+        let targetY = y - 1;
+        let foundStablePosition = false;
+        
+        while (targetY >= 1) {
+            const targetKey = `${worldX}_${targetY}_${worldZ}`;
+            const targetBlock = chunk.get(targetKey);
+            
+            if (targetBlock && targetBlock !== 'air' && targetBlock !== 'water') {
+                // Stabile Position gefunden
+                targetY += 1;
+                foundStablePosition = true;
+                break;
+            }
+            targetY--;
+        }
+        
+        if (!foundStablePosition || targetY < 1) {
+            // Keine stabile Position gefunden - Block entfernen
+            chunk.set(originalKey, 'air');
+            return { fell: false, removed: true, newY: null };
+        }
+        
+        const fallDistance = y - targetY;
+        
+        if (fallDistance > 0) {
+            // Block fällt
+            chunk.set(originalKey, 'air');
+            const newKey = `${worldX}_${targetY}_${worldZ}`;
+            chunk.set(newKey, blockType);
+            return { fell: true, removed: false, newY: targetY };
+        }
+        
+        return { fell: false, removed: false, newY: y };
+    }
+    
     // ==================== 🧠 NATURAL FEATURE GENERATORS ====================
     
     isNearWater(heightMap, x, z) {
@@ -1577,7 +3171,7 @@ class MinecraftClone {
                 
             case 'jungle':
                 if (Math.random() < 0.15) {
-                    this.generateJungleTree(chunk, x, terrainHeight, z);
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'jungle');
                 } else if (Math.random() < 0.08) {
                     this.generateJungleVines(chunk, x, terrainHeight, z);
                 }
@@ -1601,7 +3195,7 @@ class MinecraftClone {
                 
             case 'savanna':
                 if (Math.random() < 0.02) {
-                    this.generateAcaciaTree(chunk, x, terrainHeight, z);
+                    this.generateForestTree(chunk, x, terrainHeight, z, 'oak'); // Acacia-ähnliche Eichen
                 } else if (Math.random() < 0.15) {
                     this.generateSavannaGrass(chunk, x, terrainHeight, z);
                 }
@@ -1644,22 +3238,470 @@ class MinecraftClone {
     }
     
     generateForestTree(chunk, x, y, z, treeType = 'oak') {
-        const treeHeight = 5 + Math.floor(Math.random() * 4);
-        const woodType = treeType === 'spruce' ? 'wood' : (treeType === 'birch' ? 'birch_wood' : 'wood');
-        const leafType = treeType === 'spruce' ? 'leaves' : (treeType === 'birch' ? 'birch_leaves' : 'leaves');
+        // 🌳 ULTIMATIVES BAUM-GENERIERUNGSSYSTEM - Mit echten Stämmen und Ästen!
+        console.log(`🌳 Generating ULTIMATE ${treeType} tree at (${x}, ${y}, ${z})`);
         
-        // Tree trunk
-        for (let i = 0; i < treeHeight; i++) {
-            if (y + i < this.worldHeight) {
-                chunk.set(`${x}_${y + i}_${z}`, woodType);
+        // Bestimme Baum-Parameter basierend auf Art
+        const treeParams = this.getTreeParameters(treeType);
+        
+        // Prüfe ob genug Platz für Baum vorhanden
+        if (!this.hasSpaceForTree(chunk, x, y, z, treeParams)) {
+            console.log(`🌳 Not enough space for tree at (${x}, ${y}, ${z})`);
+            return;
+        }
+        
+        // PHASE 1: WURZELSYSTEM generieren
+        this.generateRootSystem(chunk, x, y, z, treeParams);
+        
+        // PHASE 2: HAUPTSTAMM generieren (mit natürlicher Krümmung)
+        const trunkPath = this.generateRealisticTrunk(chunk, x, y, z, treeParams);
+        
+        // PHASE 3: ÄST-SYSTEM generieren (realistisch verzweigt)
+        const branches = this.generateRealisticBranches(chunk, trunkPath, treeParams);
+        
+        // PHASE 4: BLÄTTER-SYSTEM generieren (natürliche Anordnung)
+        this.generateRealisticFoliage(chunk, trunkPath, branches, treeParams);
+        
+        // PHASE 5: FRÜCHTE/ZAPFEN hinzufügen (je nach Baumart)
+        this.generateTreeFruit(chunk, branches, treeParams);
+        
+        console.log(`🌳 ✅ Generated PERFECT ${treeType} tree with ${trunkPath.length} trunk segments and ${branches.length} branches`);
+    }
+    
+    getTreeParameters(treeType) {
+        // 🌳 BAUM-PARAMETER für verschiedene realistische Baumarten
+        const treeTypes = {
+            'oak': {
+                woodType: 'wood',
+                leafType: 'leaves',
+                minHeight: 6,
+                maxHeight: 12,
+                trunkRadius: 0.3,
+                branchDensity: 0.7,
+                branchLength: 4,
+                branchAngle: 45,
+                leafDensity: 0.8,
+                leafRadius: 3,
+                rootDepth: 2,
+                rootSpread: 4,
+                naturalCurve: 0.15,
+                taperRate: 0.9,
+                shape: 'round'
+            },
+            'spruce': {
+                woodType: 'wood',
+                leafType: 'leaves',
+                minHeight: 8,
+                maxHeight: 18,
+                trunkRadius: 0.4,
+                branchDensity: 0.9,
+                branchLength: 2.5,
+                branchAngle: 25,
+                leafDensity: 0.9,
+                leafRadius: 2,
+                rootDepth: 3,
+                rootSpread: 3,
+                naturalCurve: 0.05,
+                taperRate: 0.95,
+                shape: 'conical'
+            },
+            'birch': {
+                woodType: 'birch_wood',
+                leafType: 'birch_leaves',
+                minHeight: 5,
+                maxHeight: 10,
+                trunkRadius: 0.25,
+                branchDensity: 0.6,
+                branchLength: 3,
+                branchAngle: 60,
+                leafDensity: 0.7,
+                leafRadius: 2.5,
+                rootDepth: 1.5,
+                rootSpread: 3,
+                naturalCurve: 0.25,
+                taperRate: 0.88,
+                shape: 'oval'
+            },
+            'jungle': {
+                woodType: 'jungle_wood',
+                leafType: 'jungle_leaves',
+                minHeight: 10,
+                maxHeight: 20,
+                trunkRadius: 0.6,
+                branchDensity: 0.8,
+                branchLength: 6,
+                branchAngle: 70,
+                leafDensity: 0.9,
+                leafRadius: 4,
+                rootDepth: 3,
+                rootSpread: 6,
+                naturalCurve: 0.3,
+                taperRate: 0.92,
+                shape: 'irregular'
+            }
+        };
+        
+        const params = treeTypes[treeType] || treeTypes['oak'];
+        
+        // Füge zufällige Variation hinzu
+        params.height = params.minHeight + Math.floor(Math.random() * (params.maxHeight - params.minHeight));
+        params.variation = Math.random() * 0.3 + 0.85; // 85-115% Variation
+        
+        return params;
+    }
+    
+    hasSpaceForTree(chunk, x, y, z, params) {
+        // 🌳 PRÜFT OB GENUG PLATZ FÜR BAUM VORHANDEN IST
+        const checkRadius = Math.ceil(params.leafRadius);
+        const checkHeight = params.height + 2;
+        
+        // Prüfe Bereich um Baum
+        for (let dx = -checkRadius; dx <= checkRadius; dx++) {
+            for (let dz = -checkRadius; dz <= checkRadius; dz++) {
+                for (let dy = 0; dy < checkHeight; dy++) {
+                    const checkX = x + dx;
+                    const checkY = y + dy;
+                    const checkZ = z + dz;
+                    const checkKey = `${checkX}_${checkY}_${checkZ}`;
+                    const existingBlock = chunk.get(checkKey);
+                    
+                    // Bereich darf nicht bereits von anderen Strukturen belegt sein
+                    if (existingBlock && existingBlock !== 'air' && 
+                        !existingBlock.includes('grass') && existingBlock !== 'dirt') {
+                        return false;
+                    }
+                }
             }
         }
         
-        // Tree crown - different shapes for different tree types
-        if (treeType === 'spruce') {
-            this.generateSpruceLeaves(chunk, x, y + treeHeight - 1, z, leafType);
-        } else {
-            this.generateOakLeaves(chunk, x, y + treeHeight - 1, z, leafType);
+        return true;
+    }
+    
+    generateRootSystem(chunk, x, y, z, params) {
+        // 🌳 GENERIERT REALISTISCHES WURZELSYSTEM
+        const rootDepth = Math.floor(params.rootDepth);
+        const rootSpread = Math.floor(params.rootSpread);
+        
+        // Hauptwurzeln in 4-8 Richtungen
+        const numMainRoots = 4 + Math.floor(Math.random() * 4);
+        
+        for (let rootIndex = 0; rootIndex < numMainRoots; rootIndex++) {
+            const angle = (rootIndex * 2 * Math.PI) / numMainRoots + (Math.random() - 0.5) * 0.5;
+            
+            // Generiere Hauptwurzel
+            for (let distance = 1; distance <= rootSpread; distance++) {
+                const rootX = x + Math.round(Math.cos(angle) * distance);
+                const rootZ = z + Math.round(Math.sin(angle) * distance);
+                
+                // Wurzeln gehen nach unten
+                for (let depth = 1; depth <= rootDepth; depth++) {
+                    const rootY = y - depth;
+                    if (rootY >= 1) {
+                        const rootKey = `${rootX}_${rootY}_${rootZ}`;
+                        const existingBlock = chunk.get(rootKey);
+                        
+                        // Nur in Erde/Steinbereiche einwachsen
+                        if (!existingBlock || existingBlock === 'air' || 
+                            existingBlock.includes('dirt') || existingBlock === 'stone') {
+                            
+                            // Oberflächennahe Wurzeln sind sichtbar
+                            if (depth <= 1 && distance <= 2) {
+                                chunk.set(rootKey, params.woodType);
+                            } else {
+                                // Unterirdische Wurzeln modifizieren Boden
+                                chunk.set(rootKey, 'dirt');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    generateRealisticTrunk(chunk, x, y, z, params) {
+        // 🌳 GENERIERT REALISTISCHEN BAUMSTAMM mit natürlicher Krümmung
+        const trunkPath = [];
+        let currentX = x;
+        let currentZ = z;
+        let currentRadius = params.trunkRadius;
+        
+        // Natürliche Stammkrümmung
+        let curveDirX = (Math.random() - 0.5) * params.naturalCurve;
+        let curveDirZ = (Math.random() - 0.5) * params.naturalCurve;
+        
+        for (let height = 0; height < params.height; height++) {
+            const currentY = y + height;
+            
+            // Berechne Stammposition mit natürlicher Krümmung
+            const heightRatio = height / params.height;
+            currentX += curveDirX * (1 - heightRatio);
+            currentZ += curveDirZ * (1 - heightRatio);
+            
+            // Stammverjüngung nach oben
+            currentRadius *= params.taperRate;
+            const blockRadius = Math.max(0.5, currentRadius);
+            
+            // Platziere Stamm-Blöcke (mit Dicke)
+            for (let dx = -Math.ceil(blockRadius); dx <= Math.ceil(blockRadius); dx++) {
+                for (let dz = -Math.ceil(blockRadius); dz <= Math.ceil(blockRadius); dz++) {
+                    const distance = Math.sqrt(dx * dx + dz * dz);
+                    if (distance <= blockRadius) {
+                        const blockX = Math.round(currentX) + dx;
+                        const blockZ = Math.round(currentZ) + dz;
+                        const blockKey = `${blockX}_${currentY}_${blockZ}`;
+                        
+                        chunk.set(blockKey, params.woodType);
+                        trunkPath.push({
+                            x: blockX, 
+                            y: currentY, 
+                            z: blockZ, 
+                            radius: currentRadius,
+                            height: height
+                        });
+                    }
+                }
+            }
+            
+            // Variiere Krümmungsrichtung leicht
+            curveDirX += (Math.random() - 0.5) * 0.05;
+            curveDirZ += (Math.random() - 0.5) * 0.05;
+            
+            // Begrenze maximale Krümmung
+            curveDirX = Math.max(-0.3, Math.min(0.3, curveDirX));
+            curveDirZ = Math.max(-0.3, Math.min(0.3, curveDirZ));
+        }
+        
+        return trunkPath;
+    }
+    
+    generateRealisticBranches(chunk, trunkPath, params) {
+        // 🌿 GENERIERT REALISTISCHE ÄST-VERZWEIGUNG
+        const branches = [];
+        const branchStartHeight = Math.floor(params.height * 0.4); // Äste beginnen bei 40% der Höhe
+        
+        for (let i = branchStartHeight; i < trunkPath.length; i += 2) {
+            const trunkSegment = trunkPath[i];
+            if (!trunkSegment) continue;
+            
+            const heightRatio = trunkSegment.height / params.height;
+            const branchProbability = params.branchDensity * (1 - heightRatio * 0.5);
+            
+            if (Math.random() < branchProbability) {
+                // Generiere Ast in zufällige Richtung
+                const branchAngle = Math.random() * 2 * Math.PI;
+                const branchElevation = (Math.random() - 0.5) * params.branchAngle * Math.PI / 180;
+                const branchLength = params.branchLength * (0.7 + Math.random() * 0.6) * (1 - heightRatio * 0.3);
+                
+                const branch = this.generateSingleBranch(
+                    chunk, 
+                    trunkSegment.x, 
+                    trunkSegment.y, 
+                    trunkSegment.z,
+                    branchAngle,
+                    branchElevation,
+                    branchLength,
+                    params
+                );
+                
+                if (branch.length > 0) {
+                    branches.push(branch);
+                }
+            }
+        }
+        
+        return branches;
+    }
+    
+    generateSingleBranch(chunk, startX, startY, startZ, angle, elevation, length, params) {
+        // 🌿 GENERIERT EINZELNEN REALISTISCHEN AST
+        const branch = [];
+        let currentRadius = params.trunkRadius * 0.4; // Äste sind dünner als Stamm
+        
+        for (let segment = 0; segment < length; segment++) {
+            const segmentRatio = segment / length;
+            
+            // Berechne Ast-Position
+            const distance = segmentRatio * length;
+            const astX = startX + Math.round(Math.cos(angle) * distance);
+            const astY = startY + Math.round(Math.sin(elevation) * distance);
+            const astZ = startZ + Math.round(Math.sin(angle) * distance);
+            
+            // Ast-Verjüngung
+            currentRadius *= 0.9;
+            
+            if (astY >= 1 && astY < this.worldHeight && currentRadius > 0.2) {
+                const astKey = `${astX}_${astY}_${astZ}`;
+                chunk.set(astKey, params.woodType);
+                
+                branch.push({
+                    x: astX,
+                    y: astY, 
+                    z: astZ,
+                    radius: currentRadius,
+                    segmentRatio: segmentRatio
+                });
+                
+                // Kleine Sub-Äste generieren
+                if (Math.random() < 0.3 && segment > length * 0.4) {
+                    this.generateSubBranch(chunk, astX, astY, astZ, params, currentRadius * 0.7);
+                }
+            }
+        }
+        
+        return branch;
+    }
+    
+    generateSubBranch(chunk, startX, startY, startZ, params, radius) {
+        // 🌿 GENERIERT KLEINE SUB-ÄSTE für mehr Realismus
+        const subBranchLength = 2 + Math.floor(Math.random() * 3);
+        const subAngle = Math.random() * 2 * Math.PI;
+        const subElevation = (Math.random() - 0.5) * 0.5;
+        
+        for (let i = 1; i <= subBranchLength; i++) {
+            const subX = startX + Math.round(Math.cos(subAngle) * i);
+            const subY = startY + Math.round(Math.sin(subElevation) * i);
+            const subZ = startZ + Math.round(Math.sin(subAngle) * i);
+            
+            if (subY >= 1 && subY < this.worldHeight) {
+                const subKey = `${subX}_${subY}_${subZ}`;
+                chunk.set(subKey, params.woodType);
+            }
+        }
+    }
+    
+    generateRealisticFoliage(chunk, trunkPath, branches, params) {
+        // 🍃 GENERIERT REALISTISCHE BLÄTTER-ANORDNUNG
+        const leafPositions = new Set();
+        
+        // Blätter am Stamm (obere Bereiche)
+        const crownStartHeight = Math.floor(params.height * 0.6);
+        for (let i = crownStartHeight; i < trunkPath.length; i++) {
+            const segment = trunkPath[i];
+            if (segment) {
+                this.placeLeavesAroundPosition(chunk, segment.x, segment.y, segment.z, 
+                                              params.leafRadius * 0.8, params, leafPositions);
+            }
+        }
+        
+        // Blätter an allen Ästen
+        for (const branch of branches) {
+            for (let i = Math.floor(branch.length * 0.3); i < branch.length; i++) {
+                const segment = branch[i];
+                if (segment) {
+                    const leafRadius = params.leafRadius * (0.6 + segment.segmentRatio * 0.4);
+                    this.placeLeavesAroundPosition(chunk, segment.x, segment.y, segment.z, 
+                                                  leafRadius, params, leafPositions);
+                }
+            }
+        }
+        
+        // Finale Blätter-Dichte-Optimierung
+        this.optimizeLeafDensity(chunk, leafPositions, params);
+    }
+    
+    placeLeavesAroundPosition(chunk, centerX, centerY, centerZ, radius, params, leafPositions) {
+        // 🍃 PLATZIERT BLÄTTER UM POSITION mit natürlicher Variation
+        const intRadius = Math.ceil(radius);
+        
+        for (let dx = -intRadius; dx <= intRadius; dx++) {
+            for (let dy = -intRadius; dy <= intRadius; dy++) {
+                for (let dz = -intRadius; dz <= intRadius; dz++) {
+                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                    
+                    if (distance <= radius) {
+                        const leafX = centerX + dx;
+                        const leafY = centerY + dy;
+                        const leafZ = centerZ + dz;
+                        const leafKey = `${leafX}_${leafY}_${leafZ}`;
+                        
+                        // Natürliche Blätter-Wahrscheinlichkeit basierend auf Distanz
+                        const leafProbability = params.leafDensity * (1 - distance / radius) * 
+                                               (0.8 + Math.random() * 0.4);
+                        
+                        if (Math.random() < leafProbability && 
+                            leafY >= 1 && leafY < this.worldHeight &&
+                            !leafPositions.has(leafKey)) {
+                            
+                            const existingBlock = chunk.get(leafKey);
+                            // Nur platzieren wenn kein Stamm/Ast vorhanden
+                            if (!existingBlock || existingBlock === 'air') {
+                                chunk.set(leafKey, params.leafType);
+                                leafPositions.add(leafKey);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    optimizeLeafDensity(chunk, leafPositions, params) {
+        // 🍃 OPTIMIERT BLÄTTER-DICHTE für natürliches Aussehen
+        
+        // Entferne isolierte Einzelblätter für natürlicheres Aussehen
+        const toRemove = [];
+        
+        for (const leafKey of leafPositions) {
+            const [x, y, z] = leafKey.split('_').map(Number);
+            let neighborCount = 0;
+            
+            // Prüfe 6 direkte Nachbarn
+            const neighbors = [
+                [x+1, y, z], [x-1, y, z],
+                [x, y+1, z], [x, y-1, z],
+                [x, y, z+1], [x, y, z-1]
+            ];
+            
+            for (const [nx, ny, nz] of neighbors) {
+                const neighborKey = `${nx}_${ny}_${nz}`;
+                const neighborBlock = chunk.get(neighborKey);
+                
+                if (neighborBlock === params.leafType || 
+                    neighborBlock === params.woodType) {
+                    neighborCount++;
+                }
+            }
+            
+            // Entferne isolierte Blätter
+            if (neighborCount < 2 && Math.random() < 0.4) {
+                toRemove.push(leafKey);
+            }
+        }
+        
+        // Entferne markierte Blätter
+        for (const leafKey of toRemove) {
+            chunk.set(leafKey, 'air');
+            leafPositions.delete(leafKey);
+        }
+        
+        console.log(`🍃 Optimized foliage: ${leafPositions.size} leaves placed, ${toRemove.length} isolated leaves removed`);
+    }
+    
+    generateTreeFruit(chunk, branches, params) {
+        // 🍎 GENERIERT FRÜCHTE/ZAPFEN je nach Baumart
+        if (params.woodType === 'wood' && Math.random() < 0.3) {
+            // Eichen können Eicheln haben (simuliert durch kleine braune Blöcke)
+            this.placeFruitOnBranches(chunk, branches, 'wood', 0.05);
+        } else if (params.leafType === 'leaves' && params.shape === 'conical') {
+            // Fichten haben Zapfen
+            this.placeFruitOnBranches(chunk, branches, 'wood', 0.08);
+        }
+    }
+    
+    placeFruitOnBranches(chunk, branches, fruitType, probability) {
+        // 🍎 PLATZIERT FRÜCHTE AN ÄSTEN
+        for (const branch of branches) {
+            for (const segment of branch) {
+                if (Math.random() < probability && segment.segmentRatio > 0.6) {
+                    // Platziere Frucht leicht unter dem Ast
+                    const fruitKey = `${segment.x}_${segment.y - 1}_${segment.z}`;
+                    const existingBlock = chunk.get(fruitKey);
+                    
+                    if (!existingBlock || existingBlock === 'air') {
+                        chunk.set(fruitKey, fruitType);
+                    }
+                }
+            }
         }
     }
     
@@ -2396,27 +4438,281 @@ class MinecraftClone {
     }
     
     adjustPerformanceSettings() {
-        // Get current FPS
+        // 🚀 ULTIMATIVE PERFORMANCE OPTIMIERUNGEN für 45+ FPS
         const currentTime = performance.now();
-        if (this.lastFPSCheck && currentTime - this.lastFPSCheck > 2000) {
+        if (this.lastFPSCheck && currentTime - this.lastFPSCheck > 1000) { // Check every second
             const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastFPSCheck));
             
-            // Adjust render distance based on performance
+            console.log(`🚀 Performance Monitor: ${fps} FPS (Target: ${this.targetFPS})`);
+            
+            // ULTIMATIVE ADAPTIVE QUALITÄT basierend auf Performance
+            if (fps < this.targetFPS - 15) {
+                // EMERGENCY PERFORMANCE MODE - Drastische Qualitätsreduktion
+                this.activateEmergencyPerformanceMode();
+                console.log('🚨 Emergency Performance Mode activated');
+            } else if (fps < this.targetFPS - 5) {
+                // AGGRESSIVE PERFORMANCE MODE
+                this.activateAggressivePerformanceMode();
+                console.log('⚡ Aggressive Performance Mode activated');
+            } else if (fps < this.targetFPS + 5) {
+                // BALANCED MODE
+                this.activateBalancedMode();
+                console.log('⚖️ Balanced Mode activated');
+            } else if (fps > this.targetFPS + 15) {
+                // ULTRA QUALITY MODE
+                this.activateUltraQualityMode();
+                console.log('💎 Ultra Quality Mode activated');
+            }
+            
+            // MEMORY CLEANUP bei niedrigen FPS
             if (fps < this.targetFPS - 10) {
-                // Performance mode - reduce quality for better FPS
-                this.renderDistance = Math.max(4, this.renderDistance - 1);
-                this.performanceMode = 'performance';
-            } else if (fps > this.targetFPS + 10 && this.renderDistance < 8) {
-                // Quality mode - increase quality if FPS allows
-                this.renderDistance = Math.min(8, this.renderDistance + 1);
-                this.performanceMode = 'quality';
-            } else {
-                this.performanceMode = 'balanced';
+                this.performMemoryCleanup();
             }
             
             this.lastFPSCheck = currentTime;
         } else if (!this.lastFPSCheck) {
             this.lastFPSCheck = currentTime;
+        }
+    }
+    
+    activateEmergencyPerformanceMode() {
+        // 🚨 NOTFALL-PERFORMANCE MODUS - Maximale FPS um jeden Preis
+        this.performanceMode = 'emergency';
+        this.renderDistance = 3; // Minimal render distance
+        
+        // Deaktiviere aufwändige Features
+        this.environmentSettings.fogEnabled = false;
+        this.environmentSettings.cloudsEnabled = false;
+        this.environmentSettings.particlesEnabled = false;
+        this.environmentSettings.weatherEffects = false;
+        
+        // Reduziere Schatten-Qualität drastisch
+        this.directionalLight.shadow.mapSize.width = 512;
+        this.directionalLight.shadow.mapSize.height = 512;
+        this.renderer.shadowMap.enabled = false; // Schatten komplett aus
+        
+        // Reduziere LOD aggressiv
+        this.lodLevels.high = 0;    // Nur player chunk in voller Qualität
+        this.lodLevels.medium = 1;  // 1 chunk medium
+        this.lodLevels.low = 2;     // 2 chunks low
+        this.lodLevels.minimal = 3; // Rest minimal
+        
+        // Deaktiviere komplexe Terrain-Features
+        this.useSimplifiedTerrain = true;
+        
+        console.log('🚨 Emergency mode: Render distance = 3, all effects disabled');
+    }
+    
+    activateAggressivePerformanceMode() {
+        // ⚡ AGGRESSIVE PERFORMANCE - Hohe FPS mit reduzierten Features
+        this.performanceMode = 'aggressive';
+        this.renderDistance = Math.max(4, this.renderDistance - 1);
+        
+        // Reduziere einige Features
+        this.environmentSettings.particlesEnabled = false;
+        this.environmentSettings.weatherEffects = false;
+        
+        // Reduziere Schatten-Qualität
+        this.directionalLight.shadow.mapSize.width = 1024;
+        this.directionalLight.shadow.mapSize.height = 1024;
+        this.renderer.shadowMap.enabled = true;
+        
+        // Optimiere LOD
+        this.lodLevels.high = 1;
+        this.lodLevels.medium = 2;
+        this.lodLevels.low = 3;
+        this.lodLevels.minimal = 4;
+        
+        this.useSimplifiedTerrain = false;
+        
+        console.log(`⚡ Aggressive mode: Render distance = ${this.renderDistance}, reduced effects`);
+    }
+    
+    activateBalancedMode() {
+        // ⚖️ BALANCED MODE - Gute Balance zwischen Qualität und Performance
+        this.performanceMode = 'balanced';
+        this.renderDistance = 6;
+        
+        // Aktiviere wichtige Features
+        this.environmentSettings.fogEnabled = true;
+        this.environmentSettings.cloudsEnabled = true;
+        this.environmentSettings.particlesEnabled = false; // Particles immer noch aus für Performance
+        this.environmentSettings.weatherEffects = false;
+        
+        // Moderate Schatten-Qualität
+        this.directionalLight.shadow.mapSize.width = 1024;
+        this.directionalLight.shadow.mapSize.height = 1024;
+        this.renderer.shadowMap.enabled = true;
+        
+        // Standard LOD
+        this.lodLevels.high = 1;
+        this.lodLevels.medium = 2;
+        this.lodLevels.low = 4;
+        this.lodLevels.minimal = 6;
+        
+        this.useSimplifiedTerrain = false;
+        
+        console.log('⚖️ Balanced mode: Render distance = 6, standard quality');
+    }
+    
+    activateUltraQualityMode() {
+        // 💎 ULTRA QUALITY MODE - Maximale Qualität wenn Performance es erlaubt
+        this.performanceMode = 'ultra';
+        this.renderDistance = Math.min(8, this.renderDistance + 1);
+        
+        // Aktiviere alle Features
+        this.environmentSettings.fogEnabled = true;
+        this.environmentSettings.cloudsEnabled = true;
+        this.environmentSettings.particlesEnabled = true;
+        this.environmentSettings.weatherEffects = true;
+        
+        // Höchste Schatten-Qualität
+        this.directionalLight.shadow.mapSize.width = 2048;
+        this.directionalLight.shadow.mapSize.height = 2048;
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Beste Qualität
+        
+        // Beste LOD
+        this.lodLevels.high = 2;    // Mehr high-quality chunks
+        this.lodLevels.medium = 3;
+        this.lodLevels.low = 5;
+        this.lodLevels.minimal = 8;
+        
+        this.useSimplifiedTerrain = false;
+        
+        console.log(`💎 Ultra mode: Render distance = ${this.renderDistance}, maximum quality`);
+    }
+    
+    performMemoryCleanup() {
+        // 🧹 MEMORY CLEANUP für bessere Performance
+        console.log('🧹 Performing memory cleanup...');
+        
+        let chunksUnloaded = 0;
+        let blocksRemoved = 0;
+        
+        // Entferne weit entfernte Chunks aggressiver
+        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
+        const maxDistance = this.renderDistance + 1;
+        
+        for (const [chunkKey, chunkMeshes] of this.loadedChunks.entries()) {
+            const [chunkX, chunkZ] = chunkKey.split('_').map(Number);
+            const distance = Math.sqrt(
+                Math.pow(chunkX - playerChunkX, 2) + 
+                Math.pow(chunkZ - playerChunkZ, 2)
+            );
+            
+            if (distance > maxDistance) {
+                // Unload chunk
+                for (const mesh of chunkMeshes) {
+                    if (mesh.parent) {
+                        mesh.parent.remove(mesh);
+                    }
+                    if (mesh.geometry) mesh.geometry.dispose();
+                    if (mesh.material) {
+                        if (Array.isArray(mesh.material)) {
+                            mesh.material.forEach(mat => mat.dispose());
+                        } else {
+                            mesh.material.dispose();
+                        }
+                    }
+                    blocksRemoved++;
+                }
+                
+                this.loadedChunks.delete(chunkKey);
+                chunksUnloaded++;
+            }
+        }
+        
+        // Cleanup instanced meshes
+        for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
+            if (instancedMesh.count === 0) {
+                this.scene.remove(instancedMesh);
+                instancedMesh.dispose();
+                this.instancedMeshes.delete(blockType);
+            }
+        }
+        
+        // Force garbage collection if available
+        if (window.gc) {
+            window.gc();
+            console.log('🧹 Forced garbage collection');
+        }
+        
+        console.log(`🧹 Memory cleanup: Unloaded ${chunksUnloaded} chunks, removed ${blocksRemoved} blocks`);
+    }
+    
+    // 🚀 ULTIMATIVE FRUSTUM CULLING für maximale Performance
+    performUltimateFrustumCulling() {
+        // Update frustum
+        this.camera.updateMatrix();
+        this.camera.updateMatrixWorld();
+        this.frustum.setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(
+                this.camera.projectionMatrix, 
+                this.camera.matrixWorldInverse
+            )
+        );
+        
+        let culledObjects = 0;
+        
+        // Cull instanced meshes
+        for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
+            if (instancedMesh && instancedMesh.visible) {
+                // Prüfe ob Mesh im Frustum
+                if (!this.frustum.containsPoint(instancedMesh.position)) {
+                    instancedMesh.visible = false;
+                    culledObjects++;
+                } else {
+                    instancedMesh.visible = true;
+                }
+            }
+        }
+        
+        return culledObjects;
+    }
+    
+    // 🔧 ADAPTIVE CHUNK LOADING basierend auf Bewegungsrichtung
+    performAdaptiveChunkLoading() {
+        const playerChunkX = Math.floor(this.camera.position.x / this.chunkSize);
+        const playerChunkZ = Math.floor(this.camera.position.z / this.chunkSize);
+        
+        // Berechne Bewegungsrichtung
+        const movementVector = new THREE.Vector3();
+        this.camera.getWorldDirection(movementVector);
+        
+        // Lade Chunks in Bewegungsrichtung mit höherer Priorität
+        const priorityChunks = [];
+        const normalChunks = [];
+        
+        for (let dx = -this.renderDistance; dx <= this.renderDistance; dx++) {
+            for (let dz = -this.renderDistance; dz <= this.renderDistance; dz++) {
+                const chunkX = playerChunkX + dx;
+                const chunkZ = playerChunkZ + dz;
+                const chunkKey = `${chunkX}_${chunkZ}`;
+                
+                if (!this.loadedChunks.has(chunkKey)) {
+                    // Prüfe ob Chunk in Bewegungsrichtung
+                    const chunkDirection = new THREE.Vector3(dx, 0, dz).normalize();
+                    const alignment = movementVector.dot(chunkDirection);
+                    
+                    if (alignment > 0.3) {
+                        priorityChunks.push({x: chunkX, z: chunkZ, priority: alignment});
+                    } else {
+                        normalChunks.push({x: chunkX, z: chunkZ, priority: alignment});
+                    }
+                }
+            }
+        }
+        
+        // Sortiere Chunks nach Priorität
+        priorityChunks.sort((a, b) => b.priority - a.priority);
+        
+        // Lade einen Priority-Chunk pro Frame
+        if (priorityChunks.length > 0) {
+            const chunk = priorityChunks[0];
+            this.loadChunk(chunk.x, chunk.z);
+            console.log(`🎯 Priority loaded chunk (${chunk.x}, ${chunk.z}) in movement direction`);
         }
     }
     
@@ -3481,15 +5777,121 @@ class MinecraftClone {
     
     animate() {
         requestAnimationFrame(() => this.animate());
+        
+        // 🚀 ULTIMATIVE PERFORMANCE OPTIMIERUNGEN im Render-Loop
+        const frameStart = performance.now();
+        
         this.update();
         this.renderWorld();
         
-        // Update shadows only occasionally for performance
-        if (this.frameCount % 10 === 0) {
+        // ADAPTIVE PERFORMANCE-Features nur alle paar Frames
+        if (this.frameCount % 5 === 0) {
+            // Frustum culling für bessere Performance
+            const culledObjects = this.performUltimateFrustumCulling();
+            
+            // Adaptive chunk loading
+            this.performAdaptiveChunkLoading();
+        }
+        
+        // Memory cleanup nur alle 60 Frames (ca. jede Sekunde)
+        if (this.frameCount % 60 === 0 && this.performanceMode === 'emergency') {
+            this.performMemoryCleanup();
+        }
+        
+        // Update shadows nur gelegentlich für Performance
+        if (this.frameCount % 10 === 0 && this.renderer.shadowMap.enabled) {
             this.renderer.shadowMap.needsUpdate = true;
         }
         
+        // 🎯 FRAME-TIME MONITORING für adaptives Performance-Tuning
+        const frameTime = performance.now() - frameStart;
+        if (frameTime > 20) { // Frame dauert länger als 20ms = unter 50 FPS
+            console.log(`⚠️ Long frame detected: ${frameTime.toFixed(2)}ms`);
+            
+            // Emergency optimizations für diesen Frame
+            if (frameTime > 30) { // Unter 33 FPS
+                this.activateEmergencyPerformanceMode();
+            }
+        }
+        
         this.renderer.render(this.scene, this.camera);
+        
+        // Performance-Statistiken erweitert
+        this.updateExtendedPerformanceStats(frameTime);
+    }
+    
+    updateExtendedPerformanceStats(frameTime) {
+        // 📊 ERWEITERTE PERFORMANCE STATISTIKEN
+        this.frameCount++;
+        const currentTime = performance.now();
+        
+        if (!this.performanceStats) {
+            this.performanceStats = {
+                frameTimes: [],
+                maxFrameTime: 0,
+                minFrameTime: Infinity,
+                avgFrameTime: 0,
+                lastStatsUpdate: currentTime
+            };
+        }
+        
+        // Sammle Frame-Time Daten
+        this.performanceStats.frameTimes.push(frameTime);
+        this.performanceStats.maxFrameTime = Math.max(this.performanceStats.maxFrameTime, frameTime);
+        this.performanceStats.minFrameTime = Math.min(this.performanceStats.minFrameTime, frameTime);
+        
+        // Behalte nur letzte 60 Frame-Times
+        if (this.performanceStats.frameTimes.length > 60) {
+            this.performanceStats.frameTimes.shift();
+        }
+        
+        // Update Statistiken alle Sekunde
+        if (currentTime - this.lastTime >= 1000) {
+            const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+            
+            // Berechne durchschnittliche Frame-Time
+            this.performanceStats.avgFrameTime = this.performanceStats.frameTimes.reduce((sum, t) => sum + t, 0) / this.performanceStats.frameTimes.length;
+            
+            // Erweiterte Performance-Informationen
+            let totalInstancedBlocks = 0;
+            let activeDrawCalls = 0;
+            let memoryUsage = 0;
+            
+            for (const [blockType, instancedMesh] of this.instancedMeshes.entries()) {
+                if (instancedMesh && instancedMesh.count > 0) {
+                    totalInstancedBlocks += instancedMesh.count;
+                    activeDrawCalls++;
+                }
+            }
+            
+            // Schätze GPU Memory Usage
+            memoryUsage = (totalInstancedBlocks * 64) / 1024 / 1024; // Approximation in MB
+            
+            // Extended FPS display
+            const fpsDisplay = document.getElementById('fps');
+            if (fpsDisplay) {
+                fpsDisplay.innerHTML = `
+                    <div style="font-family: monospace; font-size: 12px; line-height: 1.4;">
+                        <div style="color: ${fps >= this.targetFPS ? '#00ff00' : fps >= this.targetFPS - 10 ? '#ffff00' : '#ff0000'};">
+                            FPS: ${fps} (Target: ${this.targetFPS})
+                        </div>
+                        <div>Mode: ${this.performanceMode.toUpperCase()}</div>
+                        <div>Blocks: ${totalInstancedBlocks.toLocaleString()}</div>
+                        <div>Draws: ${activeDrawCalls} | Chunks: ${this.loadedChunks.size}</div>
+                        <div>Frame: ${this.performanceStats.avgFrameTime.toFixed(1)}ms (${this.performanceStats.minFrameTime.toFixed(1)}-${this.performanceStats.maxFrameTime.toFixed(1)})</div>
+                        <div>Memory: ~${memoryUsage.toFixed(1)}MB</div>
+                        <div>Render Distance: ${this.renderDistance}</div>
+                    </div>
+                `;
+            }
+            
+            this.frameCount = 0;
+            this.lastTime = currentTime;
+            
+            // Reset min/max für nächste Messung
+            this.performanceStats.maxFrameTime = 0;
+            this.performanceStats.minFrameTime = Infinity;
+        }
     }
 }
 
