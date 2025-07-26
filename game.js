@@ -810,100 +810,751 @@ class MinecraftClone {
         const startX = chunkX * this.chunkSize;
         const startZ = chunkZ * this.chunkSize;
         
+        // 🧠 PHASE 1: INTELLIGENT TERRAIN ANALYSIS - Generate height map with geological coherence
+        const heightMap = this.generateIntelligentHeightMap(startX, startZ);
+        const erosionMap = this.calculateErosionPatterns(heightMap, startX, startZ);
+        const riverMap = this.generateRiverNetworks(heightMap, erosionMap, startX, startZ);
+        const supportMap = this.calculateSupportStructure(heightMap);
+        
+        // 🧠 PHASE 2: COHERENT TERRAIN GENERATION
         for (let x = 0; x < this.chunkSize; x++) {
             for (let z = 0; z < this.chunkSize; z++) {
                 const worldX = startX + x;
                 const worldZ = startZ + z;
                 
                 const biome = this.getBiome(worldX, worldZ);
+                const terrainHeight = heightMap[x][z];
+                const erosionLevel = erosionMap[x][z];
+                const isRiver = riverMap[x][z];
+                const supportLevel = supportMap[x][z];
                 
-                // EXTREME multi-layer noise for epic terrain
-                const continentalNoise = (this.octaveNoise(worldX * 0.003, 0, worldZ * 0.003, 8, 0.7, 1) + 1) / 2;
-                const mountainNoise = (this.octaveNoise(worldX * 0.008, 0, worldZ * 0.008, 6, 0.6, 1) + 1) / 2;
-                const ridgeNoise = Math.abs(this.octaveNoise(worldX * 0.015, 0, worldZ * 0.015, 4, 0.5, 1));
-                const detailNoise = (this.octaveNoise(worldX * 0.04, 0, worldZ * 0.04, 3, 0.4, 1) + 1) / 2;
-                const caveNoise = this.octaveNoise(worldX * 0.08, worldZ * 0.08, 0, 3, 0.5, 1);
-                
-                let baseHeight = this.seaLevel;
-                
-                // EXTREME terrain based on biome - AAA game level
-                switch (biome) {
-                    case 'mountain':
-                        baseHeight += continentalNoise * 30 + mountainNoise * 25 + ridgeNoise * 15 + 10;
-                        break;
-                    case 'snow_mountain':
-                        baseHeight += continentalNoise * 40 + mountainNoise * 35 + ridgeNoise * 25 + 15;
-                        break;
-                    case 'canyon':
-                        baseHeight += continentalNoise * 8 - ridgeNoise * 20 - mountainNoise * 10 - 5;
-                        break;
-                    case 'valley':
-                        baseHeight += continentalNoise * 5 + detailNoise * 3 - 2;
-                        break;
-                    case 'hills':
-                        baseHeight += continentalNoise * 15 + mountainNoise * 10 + detailNoise * 5 + 3;
-                        break;
-                    case 'plains':
-                        baseHeight += continentalNoise * 8 + detailNoise * 2 + 1;
-                        break;
-                    case 'forest':
-                        baseHeight += continentalNoise * 12 + mountainNoise * 8 + detailNoise * 3 + 2;
-                        break;
-                    case 'desert':
-                        baseHeight += continentalNoise * 10 + detailNoise * 4 + 1;
-                        break;
-                    case 'tundra':
-                        baseHeight += continentalNoise * 18 + mountainNoise * 12 + detailNoise * 4 + 5;
-                        break;
-                    default:
-                        baseHeight += continentalNoise * 10 + detailNoise * 3 + 2;
-                }
-                
-                const terrainHeight = Math.floor(baseHeight);
-                
-                for (let y = 0; y < this.worldHeight; y++) {
-                    const blockKey = `${worldX}_${y}_${worldZ}`;
-                    let blockType = 'air';
-                    
-                    if (y === 0) {
-                        blockType = 'bedrock';
-                    } else if (y < terrainHeight - 5) {
-                        // AAA-Level: Advanced cave and terrain feature system
-                        const caveResult = this.generateAdvancedCaveSystem(worldX, y, worldZ, biome);
-                        
-                        if (caveResult.isAir) {
-                            blockType = 'air';
-                        } else {
-                            blockType = caveResult.blockType;
-                        }
-                    } else if (y < terrainHeight - 1) {
-                        switch (biome) {
-                            case 'desert':
-                            case 'canyon':
-                                blockType = 'sand';
-                                break;
-                            case 'mountain':
-                            case 'snow_mountain':
-                                blockType = y > terrainHeight - 3 ? 'dirt' : 'stone';
-                                break;
-                            default:
-                                blockType = 'dirt';
-                        }
-                    } else if (y < terrainHeight) {
-                        blockType = this.getSurfaceBlockType(biome, y, terrainHeight, worldX, worldZ);
-                    } else if (y <= this.seaLevel && terrainHeight <= this.seaLevel) {
-                        blockType = 'water';
-                    }
-                    
-                    chunk.set(blockKey, blockType);
-                }
-                
-                // AAA-Level: Advanced vegetation and structure system
-                this.generateVegetationForBiome(chunk, worldX, terrainHeight, worldZ, biome);
+                // 🧠 PHASE 3: GEOLOGICAL COLUMN GENERATION with PHYSICS-BASED SUPPORT
+                this.generateGeologicalColumn(chunk, worldX, worldZ, terrainHeight, biome, 
+                                            erosionLevel, isRiver, supportLevel);
             }
         }
         
+        // 🧠 PHASE 4: POST-PROCESSING for NATURAL FEATURES
+        this.applyNaturalFeatures(chunk, heightMap, riverMap, startX, startZ);
+        this.addCoherentVegetation(chunk, heightMap, startX, startZ);
+        this.addGeologicalStructures(chunk, heightMap, supportMap, startX, startZ);
+        
         return chunk;
+    }
+    
+    // ==================== 🧠 INTELLIGENT TERRAIN ALGORITHMS ====================
+    
+    generateIntelligentHeightMap(startX, startZ) {
+        const heightMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(0));
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                
+                // 🏔️ ULTRA-REALISTIC TERRAIN LAYERS
+                const continentalScale = this.octaveNoise(worldX * 0.001, 0, worldZ * 0.001, 8, 0.7, 1) * 0.5 + 0.5;
+                const mountainRange = this.generateMountainRidges(worldX, worldZ);
+                const valleySystem = this.generateValleySystems(worldX, worldZ);
+                const localTerrain = this.generateLocalTerrain(worldX, worldZ);
+                
+                // 🧠 GEOLOGICAL REALISM: Combine layers with physical constraints
+                let baseHeight = this.seaLevel;
+                
+                // Continental elevation
+                baseHeight += continentalScale * 25;
+                
+                // Mountain systems (realistic mountain building)
+                baseHeight += mountainRange.elevation;
+                
+                // Valley carving (realistic erosion)
+                baseHeight -= valleySystem.depth;
+                
+                // Local variations (but constrained by larger features)
+                baseHeight += localTerrain * Math.min(5, mountainRange.influence);
+                
+                // Ensure realistic constraints
+                baseHeight = Math.max(this.seaLevel - 10, Math.min(this.worldHeight - 20, baseHeight));
+                
+                heightMap[x][z] = Math.floor(baseHeight);
+            }
+        }
+        
+        // 🧠 SURFACE COHERENCE: Smooth unrealistic gaps and floating terrain
+        return this.applySurfaceCoherence(heightMap);
+    }
+    
+    generateMountainRidges(x, z) {
+        // 🏔️ ULTRA-REALISTIC MOUNTAIN FORMATION - Geological accuracy
+        
+        // Primary ridge system - Major mountain chains
+        const primaryRidge = Math.abs(this.octaveNoise(x * 0.002, 0, z * 0.002, 8, 0.6, 1));
+        const secondaryRidge = Math.abs(this.octaveNoise(x * 0.005, 0, z * 0.005, 6, 0.5, 1));
+        
+        // Mountain range continuity and direction
+        const rangeDirection = this.octaveNoise(x * 0.0003, 0, z * 0.0003, 4, 0.7, 1);
+        const rangeContinuity = this.octaveNoise(x * 0.0008, 0, z * 0.0008, 3, 0.6, 1);
+        
+        // 🧠 GEOLOGICAL REALISM: Tectonic plate influence
+        const tectonicInfluence = this.octaveNoise(x * 0.0001, 0, z * 0.0001, 2, 0.8, 1);
+        
+        // Calculate primary ridge strength
+        const primaryStrength = Math.pow(1 - primaryRidge, 3);
+        const secondaryStrength = Math.pow(1 - secondaryRidge, 2);
+        
+        // 🏔️ REALISTIC MOUNTAIN BUILDING: Combine multiple geological processes
+        let mountainHeight = 0;
+        
+        // Primary mountain chain
+        if (primaryStrength > 0.1) {
+            mountainHeight += primaryStrength * 50 * (0.6 + tectonicInfluence * 0.4);
+        }
+        
+        // Secondary ridges - foothills and smaller ranges
+        if (secondaryStrength > 0.2) {
+            mountainHeight += secondaryStrength * 25 * (0.3 + rangeContinuity * 0.4);
+        }
+        
+        // 🧠 RANGE CONTINUITY: Mountains form continuous chains
+        const chainContinuity = (rangeDirection + rangeContinuity) * 0.5;
+        mountainHeight *= (0.4 + chainContinuity * 0.6);
+        
+        // 🏔️ ALTITUDE VARIATION: Realistic peak distribution
+        const peakVariation = this.octaveNoise(x * 0.01, 0, z * 0.01, 4, 0.4, 1);
+        mountainHeight += peakVariation * 8;
+        
+        return {
+            elevation: Math.max(0, mountainHeight),
+            influence: Math.max(primaryStrength, secondaryStrength * 0.5),
+            direction: rangeDirection,
+            chainContinuity: chainContinuity,
+            tectonicActivity: tectonicInfluence
+        };
+    }
+    
+    generateValleySystems(x, z) {
+        // 🏞️ ULTRA-REALISTIC VALLEY FORMATION - Advanced erosion simulation
+        
+        // Primary drainage networks - Major river valleys
+        const primaryDrainage = this.octaveNoise(x * 0.003, 0, z * 0.003, 6, 0.6, 1);
+        const secondaryDrainage = this.octaveNoise(x * 0.008, 0, z * 0.008, 4, 0.5, 1);
+        
+        // Water flow accumulation patterns
+        const waterAccumulation = this.octaveNoise(x * 0.002, 0, z * 0.002, 5, 0.7, 1);
+        const flowDirection = this.octaveNoise(x * 0.001, 0, z * 0.001, 3, 0.8, 1);
+        
+        // 🧠 GEOLOGICAL REALISM: Erosion based on rock hardness
+        const rockHardness = this.octaveNoise(x * 0.006, 0, z * 0.006, 3, 0.4, 1);
+        
+        // 🏞️ VALLEY CARVING: Multiple erosion processes
+        let valleyDepth = 0;
+        
+        // Primary valley carving - Major river systems
+        if (primaryDrainage > 0.3) {
+            const erosionStrength = Math.pow(Math.max(0, primaryDrainage - 0.3), 2);
+            valleyDepth += erosionStrength * 20 * (1.2 - rockHardness * 0.4);
+        }
+        
+        // Secondary valley networks - Tributaries
+        if (secondaryDrainage > 0.4) {
+            const tributaryErosion = Math.pow(Math.max(0, secondaryDrainage - 0.4), 1.5);
+            valleyDepth += tributaryErosion * 8 * (1.1 - rockHardness * 0.3);
+        }
+        
+        // 🌊 WATER ACCUMULATION: Deeper valleys where water collects
+        if (waterAccumulation > 0.2) {
+            const accumulationFactor = Math.pow(Math.max(0, waterAccumulation - 0.2), 1.8);
+            valleyDepth += accumulationFactor * 12;
+        }
+        
+        // 🧠 VALLEY SHAPE: Realistic V-shaped or U-shaped valleys
+        const valleyShape = flowDirection + waterAccumulation;
+        const shapeModifier = 0.6 + Math.abs(valleyShape) * 0.4;
+        valleyDepth *= shapeModifier;
+        
+        // 🏞️ HEADWATER EROSION: Valleys deepen towards source
+        const headwaterFactor = this.octaveNoise(x * 0.02, 0, z * 0.02, 2, 0.3, 1);
+        valleyDepth += Math.max(0, headwaterFactor) * 3;
+        
+        return {
+            depth: Math.max(0, valleyDepth),
+            drainage: primaryDrainage,
+            riverPotential: waterAccumulation,
+            flowPattern: flowDirection,
+            erosionResistance: rockHardness,
+            valleyType: valleyShape > 0 ? 'v-shaped' : 'u-shaped'
+        };
+    }
+    
+    generateLocalTerrain(x, z) {
+        // 🌄 LOCAL VARIATIONS that respect larger geological features
+        const detail1 = this.octaveNoise(x * 0.02, 0, z * 0.02, 3, 0.4, 1);
+        const detail2 = this.octaveNoise(x * 0.05, 0, z * 0.05, 2, 0.3, 1);
+        
+        return detail1 * 3 + detail2 * 1;
+    }
+    
+    applySurfaceCoherence(heightMap) {
+        // 🧠 ELIMINATE FLOATING TERRAIN through intelligent smoothing
+        const coherentMap = heightMap.map(row => [...row]);
+        
+        for (let x = 1; x < this.chunkSize - 1; x++) {
+            for (let z = 1; z < this.chunkSize - 1; z++) {
+                const neighbors = [
+                    heightMap[x-1][z], heightMap[x+1][z],
+                    heightMap[x][z-1], heightMap[x][z+1]
+                ];
+                
+                const avgNeighbor = neighbors.reduce((a, b) => a + b, 0) / neighbors.length;
+                const currentHeight = heightMap[x][z];
+                
+                // 🧠 INTELLIGENT CONSTRAINT: Prevent unrealistic height differences
+                const maxHeightDiff = 8; // Maximum realistic height difference between adjacent blocks
+                
+                if (Math.abs(currentHeight - avgNeighbor) > maxHeightDiff) {
+                    // Smooth towards neighbors but maintain geological character
+                    const smoothingFactor = 0.3;
+                    coherentMap[x][z] = Math.floor(
+                        currentHeight * (1 - smoothingFactor) + avgNeighbor * smoothingFactor
+                    );
+                }
+            }
+        }
+        
+        return coherentMap;
+    }
+    
+    calculateErosionPatterns(heightMap, startX, startZ) {
+        // 🌊 EROSION SIMULATION for realistic terrain features
+        const erosionMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(0));
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                
+                // Calculate slope and water accumulation
+                const slope = this.calculateSlope(heightMap, x, z);
+                const waterFlow = this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 4, 0.5, 1);
+                
+                // Erosion strength based on water flow and slope
+                erosionMap[x][z] = Math.max(0, slope * 0.5 + waterFlow * 0.3);
+            }
+        }
+        
+        return erosionMap;
+    }
+    
+    generateRiverNetworks(heightMap, erosionMap, startX, startZ) {
+        // 🏞️ INTELLIGENT RIVER GENERATION following natural flow patterns
+        const riverMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(false));
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                
+                // Rivers form in valleys with high erosion and low elevation
+                const isLowArea = heightMap[x][z] < this.seaLevel + 5;
+                const hasStrongErosion = erosionMap[x][z] > 0.4;
+                const riverNoise = this.octaveNoise(worldX * 0.02, 0, worldZ * 0.02, 3, 0.6, 1);
+                
+                if (isLowArea && hasStrongErosion && riverNoise > 0.3) {
+                    riverMap[x][z] = true;
+                }
+            }
+        }
+        
+        return riverMap;
+    }
+    
+    calculateSupportStructure(heightMap) {
+        // 🧠 PHYSICS-BASED SUPPORT SYSTEM - No floating blocks!
+        const supportMap = Array(this.chunkSize).fill(null).map(() => Array(this.chunkSize).fill(1.0));
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                // Calculate structural support based on neighboring terrain
+                let supportStrength = 1.0;
+                
+                // Check for overhangs and unsupported areas
+                if (x > 0 && x < this.chunkSize - 1 && z > 0 && z < this.chunkSize - 1) {
+                    const neighbors = [
+                        heightMap[x-1][z], heightMap[x+1][z],
+                        heightMap[x][z-1], heightMap[x][z+1]
+                    ];
+                    
+                    const currentHeight = heightMap[x][z];
+                    const maxNeighbor = Math.max(...neighbors);
+                    
+                    // Reduce support for terrain much higher than neighbors
+                    if (currentHeight > maxNeighbor + 5) {
+                        supportStrength = Math.max(0.2, 1.0 - (currentHeight - maxNeighbor) * 0.1);
+                    }
+                }
+                
+                supportMap[x][z] = supportStrength;
+            }
+        }
+        
+        return supportMap;
+    }
+    
+    calculateSlope(heightMap, x, z) {
+        // Calculate terrain slope for erosion calculations
+        if (x === 0 || x === this.chunkSize - 1 || z === 0 || z === this.chunkSize - 1) {
+            return 0;
+        }
+        
+        const dx = heightMap[x + 1][z] - heightMap[x - 1][z];
+        const dz = heightMap[x][z + 1] - heightMap[x][z - 1];
+        
+        return Math.sqrt(dx * dx + dz * dz) / 2;
+    }
+    
+    generateGeologicalColumn(chunk, worldX, worldZ, terrainHeight, biome, erosionLevel, isRiver, supportLevel) {
+        // 🧠 GENERATE REALISTIC GEOLOGICAL COLUMN with proper layering
+        
+        for (let y = 0; y < this.worldHeight; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            let blockType = 'air';
+            
+            if (y === 0) {
+                blockType = 'bedrock';
+            } else if (y < terrainHeight) {
+                // 🧠 INTELLIGENT BLOCK PLACEMENT based on geology and support
+                blockType = this.getGeologicalBlockType(y, terrainHeight, biome, erosionLevel, 
+                                                       supportLevel, worldX, worldZ);
+                
+                // 🧠 CAVE SYSTEMS - Only where geologically stable
+                if (y < terrainHeight - 3 && supportLevel > 0.5) {
+                    const caveResult = this.generateStableCaveSystem(worldX, y, worldZ, biome, supportLevel);
+                    if (caveResult.isAir) {
+                        blockType = 'air';
+                    }
+                }
+            } else if (isRiver && y <= this.seaLevel) {
+                blockType = 'water';
+            } else if (y <= this.seaLevel && terrainHeight <= this.seaLevel) {
+                blockType = 'water';
+            }
+            
+            chunk.set(blockKey, blockType);
+        }
+    }
+    
+    getGeologicalBlockType(y, terrainHeight, biome, erosionLevel, supportLevel, worldX, worldZ) {
+        // 🧠 GEOLOGICAL REALISM: Proper rock/soil/surface layering
+        
+        const depthFromSurface = terrainHeight - y;
+        const rockDepth = 8 + Math.floor(erosionLevel * 4); // Deeper rock in eroded areas
+        
+        // Deep bedrock layer
+        if (depthFromSurface > rockDepth) {
+            return this.getBedrockType(y, biome);
+        }
+        
+        // Rock layer (varies by biome)
+        if (depthFromSurface > 3) {
+            return this.getRockType(biome, y, terrainHeight);
+        }
+        
+        // Soil layer
+        if (depthFromSurface > 1) {
+            return this.getSoilType(biome, erosionLevel);
+        }
+        
+        // Surface layer
+        return this.getSurfaceBlockType(biome, y, terrainHeight, worldX, worldZ);
+    }
+    
+    getBedrockType(y, biome) {
+        // Different bedrock types based on geological formations
+        switch (biome) {
+            case 'mountain':
+            case 'snow_mountain':
+                return 'stone';
+            case 'desert':
+            case 'canyon':
+                return y % 3 === 0 ? 'stone' : 'sand';
+            default:
+                return 'stone';
+        }
+    }
+    
+    getRockType(biome, y, terrainHeight) {
+        // Realistic rock formations
+        switch (biome) {
+            case 'mountain':
+            case 'snow_mountain':
+                return 'stone';
+            case 'desert':
+            case 'canyon':
+                return y > terrainHeight - 6 ? 'sand' : 'stone';
+            case 'valley':
+            case 'plains':
+                return y > terrainHeight - 5 ? 'dirt' : 'stone';
+            default:
+                return 'stone';
+        }
+    }
+    
+    getSoilType(biome, erosionLevel) {
+        // Soil formation based on biome and erosion
+        switch (biome) {
+            case 'desert':
+            case 'canyon':
+                return 'sand';
+            case 'tundra':
+                return erosionLevel > 0.5 ? 'stone' : 'dirt';
+            default:
+                return 'dirt';
+        }
+    }
+    
+    generateStableCaveSystem(worldX, y, worldZ, biome, supportLevel) {
+        // 🧠 INTELLIGENT CAVE NETWORKS - Geologically connected systems
+        
+        // Multi-scale cave generation for realistic networks
+        const majorCaveSystem = this.octaveNoise(worldX * 0.008, y * 0.012, worldZ * 0.008, 6, 0.6, 1);
+        const tunnelNetwork = this.octaveNoise(worldX * 0.025, y * 0.04, worldZ * 0.025, 4, 0.5, 1);
+        const chamberSystem = this.octaveNoise(worldX * 0.004, y * 0.008, worldZ * 0.004, 5, 0.7, 1);
+        
+        // 🧠 GEOLOGICAL CONSTRAINTS: Caves based on rock layers and water table
+        const waterTable = this.seaLevel + 5;
+        const isAboveWaterTable = y > waterTable;
+        const rockLayer = this.getRockLayerStability(y, worldX, worldZ, biome);
+        
+        // 🏞️ CAVE NETWORK CONNECTIVITY
+        const networkConnectivity = this.calculateCaveConnectivity(worldX, y, worldZ);
+        
+        // Adjust cave probability based on geological stability
+        const stabilityFactor = Math.pow(supportLevel, 1.5);
+        const geologicalFactor = rockLayer.hardness * rockLayer.porosity;
+        
+        let caveThreshold = 0.65;
+        
+        // 🧠 INTELLIGENT CAVE PLACEMENT
+        let isCave = false;
+        
+        // Major cave chambers - rare but large
+        if (Math.abs(chamberSystem) > 0.7 && supportLevel > 0.8 && geologicalFactor > 0.4) {
+            isCave = true;
+            // Generate larger chambers
+            if (Math.abs(chamberSystem) > 0.8) {
+                return { isAir: true, caveType: 'chamber', connectivity: networkConnectivity };
+            }
+        }
+        
+        // Tunnel networks - connecting passages
+        else if (Math.abs(tunnelNetwork) > 0.6 && supportLevel > 0.6 && networkConnectivity > 0.3) {
+            isCave = true;
+            return { isAir: true, caveType: 'tunnel', connectivity: networkConnectivity };
+        }
+        
+        // Major cave systems - primary caves
+        else if (majorCaveSystem > caveThreshold && supportLevel > 0.7 && geologicalFactor > 0.3) {
+            isCave = true;
+            return { isAir: true, caveType: 'cave', connectivity: networkConnectivity };
+        }
+        
+        // 🌊 WATER-FILLED CAVES below water table
+        if (isCave && !isAboveWaterTable && Math.random() < 0.7) {
+            return { isAir: false, blockType: 'water', caveType: 'underwater' };
+        }
+        
+        // 💎 SPECIAL CAVE FEATURES
+        if (isCave && this.shouldGenerateSpecialCaveFeature(worldX, y, worldZ, biome)) {
+            return { isAir: true, caveType: 'special', hasFeatures: true };
+        }
+        
+        return { isAir: isCave, blockType: rockLayer.rockType };
+    }
+    
+    getRockLayerStability(y, x, z, biome) {
+        // 🗿 GEOLOGICAL ROCK LAYERS determine cave formation potential
+        const depthFactor = (this.seaLevel - y) / this.seaLevel;
+        const rockVariation = this.octaveNoise(x * 0.003, y * 0.01, z * 0.003, 4, 0.4, 1);
+        
+        let hardness, porosity, rockType;
+        
+        // Different rock layers at different depths
+        if (y < this.seaLevel * 0.3) {
+            // Deep bedrock - very hard, low porosity
+            hardness = 0.9 + rockVariation * 0.1;
+            porosity = 0.1 + Math.abs(rockVariation) * 0.2;
+            rockType = 'stone';
+        } else if (y < this.seaLevel * 0.6) {
+            // Middle rock layers - moderate hardness
+            hardness = 0.6 + rockVariation * 0.3;
+            porosity = 0.3 + Math.abs(rockVariation) * 0.4;
+            rockType = 'stone';
+        } else {
+            // Upper layers - softer, more porous
+            hardness = 0.4 + rockVariation * 0.4;
+            porosity = 0.5 + Math.abs(rockVariation) * 0.3;
+            rockType = biome === 'desert' ? 'sand' : 'dirt';
+        }
+        
+        return { hardness, porosity, rockType };
+    }
+    
+    calculateCaveConnectivity(x, y, z) {
+        // 🧠 CALCULATE how well caves connect to form networks
+        const connectivityNoise = this.octaveNoise(x * 0.015, y * 0.02, z * 0.015, 3, 0.5, 1);
+        const networkFlow = this.octaveNoise(x * 0.006, y * 0.01, z * 0.006, 4, 0.6, 1);
+        
+        // Caves more likely to connect along certain directions
+        const connectivity = (connectivityNoise + networkFlow) * 0.5;
+        return Math.max(0, connectivity);
+    }
+    
+    shouldGenerateSpecialCaveFeature(x, y, z, biome) {
+        // 💎 SPECIAL CAVE FEATURES - Underground lakes, crystal formations, etc.
+        const featureNoise = this.octaveNoise(x * 0.02, y * 0.03, z * 0.02, 2, 0.3, 1);
+        
+        switch (biome) {
+            case 'mountain':
+            case 'snow_mountain':
+                // Crystal caves in mountains
+                return featureNoise > 0.8 && Math.random() < 0.001;
+            case 'desert':
+                // Sand cave formations
+                return featureNoise > 0.7 && Math.random() < 0.002;
+            default:
+                // Underground water features
+                return featureNoise > 0.85 && Math.random() < 0.0005;
+        }
+    }
+    
+    // ==================== 🧠 POST-PROCESSING ALGORITHMS ====================
+    
+    applyNaturalFeatures(chunk, heightMap, riverMap, startX, startZ) {
+        // 🏞️ APPLY NATURAL FEATURES - Rivers, beaches, natural arches
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const terrainHeight = heightMap[x][z];
+                
+                // 🌊 REALISTIC BEACHES where water meets land
+                if (this.isNearWater(heightMap, x, z)) {
+                    this.generateRealisticBeach(chunk, worldX, worldZ, terrainHeight);
+                }
+                
+                // 🏞️ RIVER BEDS with proper flow and banks
+                if (riverMap[x][z]) {
+                    this.carveRiverBed(chunk, worldX, worldZ, terrainHeight);
+                }
+                
+                // 🗿 NATURAL ARCHES - but only where geologically possible
+                if (this.canSupportNaturalArch(heightMap, x, z)) {
+                    this.generateNaturalArch(chunk, worldX, worldZ, terrainHeight);
+                }
+            }
+        }
+    }
+    
+    addCoherentVegetation(chunk, heightMap, startX, startZ) {
+        // 🌿 COHERENT VEGETATION - Trees only on stable ground
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const terrainHeight = heightMap[x][z];
+                const biome = this.getBiome(worldX, worldZ);
+                
+                // 🧠 INTELLIGENT VEGETATION PLACEMENT
+                if (this.canSupportVegetation(heightMap, x, z, terrainHeight)) {
+                    this.generateVegetationForBiome(chunk, worldX, terrainHeight, worldZ, biome);
+                }
+            }
+        }
+    }
+    
+    addGeologicalStructures(chunk, heightMap, supportMap, startX, startZ) {
+        // 🗿 GEOLOGICAL STRUCTURES - Rock formations, mineral veins, etc.
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
+                const terrainHeight = heightMap[x][z];
+                const supportLevel = supportMap[x][z];
+                const biome = this.getBiome(worldX, worldZ);
+                
+                // 🧠 INTELLIGENT GEOLOGICAL FEATURES
+                if (supportLevel > 0.8 && terrainHeight > this.seaLevel + 10) {
+                    this.generateRockFormations(chunk, worldX, worldZ, terrainHeight, biome);
+                }
+                
+                // 💎 REALISTIC MINERAL DEPOSITS
+                this.generateMineralDeposits(chunk, worldX, worldZ, terrainHeight, biome);
+            }
+        }
+    }
+    
+    // ==================== 🧠 NATURAL FEATURE GENERATORS ====================
+    
+    isNearWater(heightMap, x, z) {
+        // Check if position is near water (for beach generation)
+        const checkRadius = 3;
+        
+        for (let dx = -checkRadius; dx <= checkRadius; dx++) {
+            for (let dz = -checkRadius; dz <= checkRadius; dz++) {
+                const checkX = x + dx;
+                const checkZ = z + dz;
+                
+                if (checkX >= 0 && checkX < this.chunkSize && 
+                    checkZ >= 0 && checkZ < this.chunkSize) {
+                    if (heightMap[checkX][checkZ] <= this.seaLevel) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    generateRealisticBeach(chunk, worldX, worldZ, terrainHeight) {
+        // 🏖️ REALISTIC BEACH GENERATION
+        if (terrainHeight <= this.seaLevel + 3 && terrainHeight >= this.seaLevel - 1) {
+            // Replace surface with sand in beach areas
+            for (let y = Math.max(0, this.seaLevel - 2); y <= terrainHeight; y++) {
+                const blockKey = `${worldX}_${y}_${worldZ}`;
+                if (chunk.has(blockKey) && chunk.get(blockKey) !== 'water') {
+                    chunk.set(blockKey, 'sand');
+                }
+            }
+        }
+    }
+    
+    carveRiverBed(chunk, worldX, worldZ, terrainHeight) {
+        // 🏞️ CARVE REALISTIC RIVER BEDS
+        const riverDepth = 2 + Math.floor(Math.random() * 2);
+        
+        for (let y = terrainHeight; y > terrainHeight - riverDepth && y > 0; y--) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            chunk.set(blockKey, 'water');
+        }
+        
+        // River bed material
+        if (terrainHeight - riverDepth > 0) {
+            const bedKey = `${worldX}_${terrainHeight - riverDepth}_${worldZ}`;
+            chunk.set(bedKey, 'sand');
+        }
+    }
+    
+    canSupportNaturalArch(heightMap, x, z) {
+        // 🗿 CHECK if natural arch is geologically possible
+        if (x < 2 || x >= this.chunkSize - 2 || z < 2 || z >= this.chunkSize - 2) {
+            return false;
+        }
+        
+        const currentHeight = heightMap[x][z];
+        const neighbors = [
+            heightMap[x-1][z], heightMap[x+1][z],
+            heightMap[x][z-1], heightMap[x][z+1]
+        ];
+        
+        // Arch possible if high area with lower surroundings
+        const avgNeighbor = neighbors.reduce((a, b) => a + b, 0) / neighbors.length;
+        return currentHeight > avgNeighbor + 8 && currentHeight > this.seaLevel + 15;
+    }
+    
+    generateNaturalArch(chunk, worldX, worldZ, terrainHeight) {
+        // 🗿 GENERATE NATURAL ARCH STRUCTURE
+        if (Math.random() < 0.001) { // Very rare
+            const archHeight = 6 + Math.floor(Math.random() * 4);
+            const archBase = terrainHeight - 3;
+            
+            // Create arch opening
+            for (let y = archBase; y < archBase + archHeight; y++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const blockKey = `${worldX + dx}_${y}_${worldZ}`;
+                    if (y > archBase + 1 && y < archBase + archHeight - 1) {
+                        chunk.set(blockKey, 'air'); // Arch opening
+                    }
+                }
+            }
+        }
+    }
+    
+    canSupportVegetation(heightMap, x, z, terrainHeight) {
+        // 🌿 CHECK if vegetation can grow (stable ground, not too steep)
+        if (terrainHeight <= this.seaLevel) return false;
+        
+        // Check slope stability
+        if (x > 0 && x < this.chunkSize - 1 && z > 0 && z < this.chunkSize - 1) {
+            const neighbors = [
+                heightMap[x-1][z], heightMap[x+1][z],
+                heightMap[x][z-1], heightMap[x][z+1]
+            ];
+            
+            const maxHeightDiff = Math.max(...neighbors.map(h => Math.abs(h - terrainHeight)));
+            return maxHeightDiff < 5; // Not too steep
+        }
+        
+        return true;
+    }
+    
+    generateRockFormations(chunk, worldX, worldZ, terrainHeight, biome) {
+        // 🗿 GENERATE ROCK FORMATIONS based on biome
+        const formationNoise = this.octaveNoise(worldX * 0.03, 0, worldZ * 0.03, 3, 0.5, 1);
+        
+        if (formationNoise > 0.6 && Math.random() < 0.02) {
+            const formationHeight = 3 + Math.floor(Math.random() * 5);
+            
+            for (let y = terrainHeight; y < terrainHeight + formationHeight && y < this.worldHeight; y++) {
+                const blockKey = `${worldX}_${y}_${worldZ}`;
+                
+                switch (biome) {
+                    case 'desert':
+                    case 'canyon':
+                        chunk.set(blockKey, 'sand');
+                        break;
+                    default:
+                        chunk.set(blockKey, 'stone');
+                }
+            }
+        }
+    }
+    
+    generateMineralDeposits(chunk, worldX, worldZ, terrainHeight, biome) {
+        // 💎 REALISTIC MINERAL DISTRIBUTION
+        const oreNoise = this.octaveNoise(worldX * 0.1, terrainHeight * 0.1, worldZ * 0.1, 3, 0.4, 1);
+        
+        // Different ores at different depths and biomes
+        for (let y = 1; y < terrainHeight - 1; y++) {
+            const blockKey = `${worldX}_${y}_${worldZ}`;
+            
+            if (chunk.get(blockKey) === 'stone') {
+                const depthFactor = (terrainHeight - y) / terrainHeight;
+                
+                // Coal - common, shallow
+                if (y > terrainHeight * 0.6 && oreNoise > 0.3 && Math.random() < 0.01) {
+                    chunk.set(blockKey, 'coal');
+                }
+                
+                // Iron - medium depth
+                else if (y > terrainHeight * 0.3 && y < terrainHeight * 0.7 && oreNoise > 0.5 && Math.random() < 0.005) {
+                    chunk.set(blockKey, 'iron');
+                }
+                
+                // Gold - deep, rare
+                else if (y < terrainHeight * 0.3 && oreNoise > 0.7 && Math.random() < 0.001) {
+                    chunk.set(blockKey, 'gold');
+                }
+                
+                // Diamond - very deep, very rare
+                else if (y < terrainHeight * 0.2 && oreNoise > 0.8 && Math.random() < 0.0005) {
+                    chunk.set(blockKey, 'diamond');
+                }
+            }
+        }
     }
     
     // ==================== AAA-LEVEL VEGETATION SYSTEM ====================
