@@ -3,9 +3,10 @@ class MinecraftClone {
         this.scene = null;
         this.camera = null;
         this.renderer = null;
-        this.world = [];
-        this.worldSize = 32;
-        this.worldHeight = 16;
+        this.world = new Map();
+        this.worldHeight = 64;
+        this.seaLevel = 32;
+        this.worldSeed = Math.floor(Math.random() * 10000);
         
         this.moveSpeed = 0.15;
         this.mouseSensitivity = 0.002;
@@ -25,7 +26,14 @@ class MinecraftClone {
             dirt: { color: 0x8B4513, texture: null },
             stone: { color: 0x696969, texture: null },
             wood: { color: 0xDEB887, texture: null },
-            leaves: { color: 0x228B22, texture: null }
+            leaves: { color: 0x228B22, texture: null },
+            sand: { color: 0xF4A460, texture: null },
+            water: { color: 0x4169E1, texture: null, transparent: true },
+            snow: { color: 0xFFFAFA, texture: null },
+            coal: { color: 0x2F2F2F, texture: null },
+            iron: { color: 0xB87333, texture: null },
+            gold: { color: 0xFFD700, texture: null },
+            bedrock: { color: 0x1A1A1A, texture: null }
         };
         
         this.raycaster = new THREE.Raycaster();
@@ -40,8 +48,8 @@ class MinecraftClone {
         this.lastPlayerChunk = { x: null, z: null };
         
         try {
+            this.initializePerlinNoise();
             this.init();
-            this.generateWorld();
             this.animate();
         } catch (error) {
             console.error('Game initialization failed:', error);
@@ -164,40 +172,225 @@ class MinecraftClone {
         });
     }
     
-    generateWorld() {
-        this.world = [];
+    initializePerlinNoise() {
+        this.perlin = {
+            permutation: [],
+            p: []
+        };
         
-        for (let x = 0; x < this.worldSize; x++) {
-            this.world[x] = [];
-            for (let z = 0; z < this.worldSize; z++) {
-                this.world[x][z] = [];
+        const permutation = [
+            151,160,137,91,90,15,131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
+            190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33,88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166,
+            77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244,102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196,
+            135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123,5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42,
+            223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9,129,22,39,253,19,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228,
+            251,34,242,193,238,210,144,12,191,179,162,241,81,51,145,235,249,14,239,107,49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254,
+            138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
+        ];
+        
+        for (let i = 0; i < 256; i++) {
+            this.perlin.permutation[i] = permutation[i];
+            this.perlin.p[256 + i] = this.perlin.p[i] = permutation[i];
+        }
+    }
+    
+    fade(t) {
+        return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    
+    lerp(t, a, b) {
+        return a + t * (b - a);
+    }
+    
+    grad(hash, x, y, z) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
+    
+    noise(x, y, z) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+        const Z = Math.floor(z) & 255;
+        
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        z -= Math.floor(z);
+        
+        const u = this.fade(x);
+        const v = this.fade(y);
+        const w = this.fade(z);
+        
+        const A = this.perlin.p[X] + Y;
+        const AA = this.perlin.p[A] + Z;
+        const AB = this.perlin.p[A + 1] + Z;
+        const B = this.perlin.p[X + 1] + Y;
+        const BA = this.perlin.p[B] + Z;
+        const BB = this.perlin.p[B + 1] + Z;
+        
+        return this.lerp(w,
+            this.lerp(v,
+                this.lerp(u, this.grad(this.perlin.p[AA], x, y, z),
+                             this.grad(this.perlin.p[BA], x - 1, y, z)),
+                this.lerp(u, this.grad(this.perlin.p[AB], x, y - 1, z),
+                             this.grad(this.perlin.p[BB], x - 1, y - 1, z))),
+            this.lerp(v,
+                this.lerp(u, this.grad(this.perlin.p[AA + 1], x, y, z - 1),
+                             this.grad(this.perlin.p[BA + 1], x - 1, y, z - 1)),
+                this.lerp(u, this.grad(this.perlin.p[AB + 1], x, y - 1, z - 1),
+                             this.grad(this.perlin.p[BB + 1], x - 1, y - 1, z - 1))));
+    }
+    
+    octaveNoise(x, y, z, octaves, persistence, scale) {
+        let total = 0;
+        let frequency = scale;
+        let amplitude = 1;
+        let maxValue = 0;
+        
+        for (let i = 0; i < octaves; i++) {
+            total += this.noise(x * frequency, y * frequency, z * frequency) * amplitude;
+            maxValue += amplitude;
+            amplitude *= persistence;
+            frequency *= 2;
+        }
+        
+        return total / maxValue;
+    }
+    
+    getBiome(x, z) {
+        const temperature = this.octaveNoise(x * 0.01, 0, z * 0.01, 4, 0.5, 1);
+        const humidity = this.octaveNoise(x * 0.01 + 1000, 0, z * 0.01 + 1000, 4, 0.5, 1);
+        
+        if (temperature < -0.3) return 'snow';
+        if (temperature > 0.3 && humidity < -0.2) return 'desert';
+        if (humidity > 0.3) return 'forest';
+        return 'plains';
+    }
+    
+    generateChunk(chunkX, chunkZ) {
+        const chunkKey = `${chunkX}_${chunkZ}`;
+        const chunk = new Map();
+        
+        const startX = chunkX * this.chunkSize;
+        const startZ = chunkZ * this.chunkSize;
+        
+        for (let x = 0; x < this.chunkSize; x++) {
+            for (let z = 0; z < this.chunkSize; z++) {
+                const worldX = startX + x;
+                const worldZ = startZ + z;
                 
-                const height = Math.floor(8 + 4 * Math.sin(x * 0.1) * Math.cos(z * 0.1) + 
-                                         2 * Math.sin(x * 0.05) * Math.sin(z * 0.05));
+                const biome = this.getBiome(worldX, worldZ);
                 
-                for (let y = 0; y < this.worldHeight; y++) {
-                    if (y < height - 3) {
-                        this.world[x][z][y] = 'stone';
-                    } else if (y < height - 1) {
-                        this.world[x][z][y] = 'dirt';
-                    } else if (y < height) {
-                        this.world[x][z][y] = 'grass';
-                    } else {
-                        this.world[x][z][y] = 'air';
-                    }
+                const heightNoise = this.octaveNoise(worldX * 0.01, 0, worldZ * 0.01, 6, 0.6, 1);
+                const caveNoise = this.octaveNoise(worldX * 0.05, worldZ * 0.05, 0, 3, 0.5, 1);
+                
+                let baseHeight = this.seaLevel;
+                
+                switch (biome) {
+                    case 'plains':
+                        baseHeight += heightNoise * 8;
+                        break;
+                    case 'forest':
+                        baseHeight += heightNoise * 12;
+                        break;
+                    case 'desert':
+                        baseHeight += heightNoise * 6;
+                        break;
+                    case 'snow':
+                        baseHeight += heightNoise * 20;
+                        break;
                 }
                 
-                if (Math.random() < 0.02 && height < this.worldHeight - 5) {
-                    this.generateTree(x, height, z);
+                const terrainHeight = Math.floor(baseHeight);
+                
+                for (let y = 0; y < this.worldHeight; y++) {
+                    const blockKey = `${worldX}_${y}_${worldZ}`;
+                    let blockType = 'air';
+                    
+                    if (y === 0) {
+                        blockType = 'bedrock';
+                    } else if (y < terrainHeight - 5) {
+                        if (caveNoise > 0.6 && y > 5) {
+                            blockType = 'air';
+                        } else {
+                            blockType = 'stone';
+                            
+                            if (Math.random() < 0.01 && y < 20) blockType = 'coal';
+                            if (Math.random() < 0.005 && y < 15) blockType = 'iron';
+                            if (Math.random() < 0.002 && y < 10) blockType = 'gold';
+                        }
+                    } else if (y < terrainHeight - 1) {
+                        blockType = biome === 'desert' ? 'sand' : 'dirt';
+                    } else if (y < terrainHeight) {
+                        switch (biome) {
+                            case 'desert':
+                                blockType = 'sand';
+                                break;
+                            case 'snow':
+                                blockType = 'snow';
+                                break;
+                            default:
+                                blockType = 'grass';
+                        }
+                    } else if (y < this.seaLevel) {
+                        blockType = 'water';
+                    }
+                    
+                    chunk.set(blockKey, blockType);
+                }
+                
+                if (biome === 'forest' && Math.random() < 0.05 && terrainHeight > this.seaLevel) {
+                    this.generateTreeInChunk(chunk, worldX, terrainHeight, worldZ, biome);
+                } else if (biome === 'desert' && Math.random() < 0.001) {
+                    this.generateCactusInChunk(chunk, worldX, terrainHeight, worldZ);
                 }
             }
         }
         
-        this.renderWorld();
+        return chunk;
+    }
+    
+    generateTreeInChunk(chunk, x, y, z, biome) {
+        const treeHeight = 4 + Math.floor(Math.random() * 3);
+        
+        for (let i = 0; i < treeHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'wood');
+            }
+        }
+        
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                for (let dy = 0; dy < 3; dy++) {
+                    const leafX = x + dx;
+                    const leafZ = z + dz;
+                    const leafY = y + treeHeight - 1 + dy;
+                    
+                    if (leafY < this.worldHeight) {
+                        if (Math.abs(dx) + Math.abs(dz) <= 2 && Math.random() > 0.3) {
+                            const leafKey = `${leafX}_${leafY}_${leafZ}`;
+                            if (!chunk.has(leafKey) || chunk.get(leafKey) === 'air') {
+                                chunk.set(leafKey, 'leaves');
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    generateCactusInChunk(chunk, x, y, z) {
+        const cactusHeight = 2 + Math.floor(Math.random() * 3);
+        
+        for (let i = 0; i < cactusHeight; i++) {
+            if (y + i < this.worldHeight) {
+                chunk.set(`${x}_${y + i}_${z}`, 'leaves');
+            }
+        }
     }
     
     generateTree(x, y, z) {
-        if (x < 1 || x >= this.worldSize - 1 || z < 1 || z >= this.worldSize - 1) return;
         
         const treeHeight = 4 + Math.floor(Math.random() * 3);
         
@@ -281,24 +474,19 @@ class MinecraftClone {
         const chunkKey = `${chunkX}_${chunkZ}`;
         const chunkBlocks = new Set();
         
-        const startX = Math.max(0, chunkX * this.chunkSize);
-        const endX = Math.min(this.worldSize, (chunkX + 1) * this.chunkSize);
-        const startZ = Math.max(0, chunkZ * this.chunkSize);
-        const endZ = Math.min(this.worldSize, (chunkZ + 1) * this.chunkSize);
+        const chunkData = this.generateChunk(chunkX, chunkZ);
         
-        for (let x = startX; x < endX; x++) {
-            for (let z = startZ; z < endZ; z++) {
-                for (let y = 0; y < this.worldHeight; y++) {
-                    const blockType = this.world[x][z][y];
-                    if (blockType !== 'air' && this.shouldRenderBlock(x, y, z)) {
-                        const blockKey = `${x}_${y}_${z}`;
-                        this.createBlock(x, y, z, blockType);
-                        chunkBlocks.add(blockKey);
-                    }
+        for (const [blockKey, blockType] of chunkData.entries()) {
+            if (blockType !== 'air') {
+                const [x, y, z] = blockKey.split('_').map(Number);
+                if (this.shouldRenderBlock(x, y, z, chunkData)) {
+                    this.createBlock(x, y, z, blockType);
+                    chunkBlocks.add(blockKey);
                 }
             }
         }
         
+        this.world.set(chunkKey, chunkData);
         this.loadedChunks.set(chunkKey, chunkBlocks);
     }
     
@@ -316,7 +504,7 @@ class MinecraftClone {
         }
     }
     
-    shouldRenderBlock(x, y, z) {
+    shouldRenderBlock(x, y, z, chunkData = null) {
         const neighbors = [
             [x+1, y, z], [x-1, y, z],
             [x, y+1, z], [x, y-1, z],
@@ -324,18 +512,39 @@ class MinecraftClone {
         ];
         
         for (let [nx, ny, nz] of neighbors) {
-            if (nx < 0 || nx >= this.worldSize || 
-                ny < 0 || ny >= this.worldHeight || 
-                nz < 0 || nz >= this.worldSize) {
-                return true;
+            if (ny < 0 || ny >= this.worldHeight) {
+                return ny < 0;
             }
             
-            if (this.world[nx] && this.world[nx][nz] && this.world[nx][nz][ny] === 'air') {
+            const neighborKey = `${nx}_${ny}_${nz}`;
+            let neighborBlock = 'air';
+            
+            if (chunkData && chunkData.has(neighborKey)) {
+                neighborBlock = chunkData.get(neighborKey);
+            } else {
+                neighborBlock = this.getBlockAt(nx, ny, nz);
+            }
+            
+            if (neighborBlock === 'air') {
                 return true;
             }
         }
         
         return false;
+    }
+    
+    getBlockAt(x, y, z) {
+        const chunkX = Math.floor(x / this.chunkSize);
+        const chunkZ = Math.floor(z / this.chunkSize);
+        const chunkKey = `${chunkX}_${chunkZ}`;
+        const blockKey = `${x}_${y}_${z}`;
+        
+        if (this.world.has(chunkKey)) {
+            const chunk = this.world.get(chunkKey);
+            return chunk.get(blockKey) || 'air';
+        }
+        
+        return 'air';
     }
     
     initializeMaterials() {
@@ -447,11 +656,6 @@ class MinecraftClone {
         const blockY = Math.floor(y - 1.8);
         const blockZ = Math.floor(z);
         
-        if (blockX < 0 || blockX >= this.worldSize || 
-            blockZ < 0 || blockZ >= this.worldSize) {
-            return false;
-        }
-        
         if (blockY < 0) {
             return true;
         }
@@ -460,7 +664,7 @@ class MinecraftClone {
             return true;
         }
         
-        return this.world[blockX] && this.world[blockX][blockZ] && this.world[blockX][blockZ][blockY] === 'air';
+        return this.getBlockAt(blockX, blockY, blockZ) === 'air';
     }
     
     updateCamera() {
@@ -497,17 +701,22 @@ class MinecraftClone {
         const target = this.getTargetBlock();
         if (target) {
             const { x, y, z } = target.object.userData;
-            this.world[x][z][y] = 'air';
             
+            const chunkX = Math.floor(x / this.chunkSize);
+            const chunkZ = Math.floor(z / this.chunkSize);
+            const chunkKey = `${chunkX}_${chunkZ}`;
             const blockKey = `${x}_${y}_${z}`;
+            
+            if (this.world.has(chunkKey)) {
+                const chunk = this.world.get(chunkKey);
+                chunk.set(blockKey, 'air');
+            }
+            
             const block = this.blockMeshes.get(blockKey);
             if (block) {
                 this.scene.remove(block);
                 this.blockMeshes.delete(blockKey);
                 
-                const chunkX = Math.floor(x / this.chunkSize);
-                const chunkZ = Math.floor(z / this.chunkSize);
-                const chunkKey = `${chunkX}_${chunkZ}`;
                 const chunkBlocks = this.loadedChunks.get(chunkKey);
                 if (chunkBlocks) {
                     chunkBlocks.delete(blockKey);
@@ -531,21 +740,22 @@ class MinecraftClone {
             else if (face.normal.z > 0) placeZ++;
             else if (face.normal.z < 0) placeZ--;
             
-            if (placeX >= 0 && placeX < this.worldSize && 
-                placeY >= 0 && placeY < this.worldHeight && 
-                placeZ >= 0 && placeZ < this.worldSize &&
-                this.world[placeX][placeZ][placeY] === 'air') {
-                
+            if (placeY >= 0 && placeY < this.worldHeight && this.getBlockAt(placeX, placeY, placeZ) === 'air') {
                 const playerPos = this.camera.position;
                 const blockCenter = new THREE.Vector3(placeX + 0.5, placeY + 0.5, placeZ + 0.5);
                 if (playerPos.distanceTo(blockCenter) > 1.5) {
-                    this.world[placeX][placeZ][placeY] = this.selectedBlockType;
-                    const blockKey = `${placeX}_${placeY}_${placeZ}`;
-                    this.createBlock(placeX, placeY, placeZ, this.selectedBlockType);
-                    
                     const chunkX = Math.floor(placeX / this.chunkSize);
                     const chunkZ = Math.floor(placeZ / this.chunkSize);
                     const chunkKey = `${chunkX}_${chunkZ}`;
+                    const blockKey = `${placeX}_${placeY}_${placeZ}`;
+                    
+                    if (this.world.has(chunkKey)) {
+                        const chunk = this.world.get(chunkKey);
+                        chunk.set(blockKey, this.selectedBlockType);
+                    }
+                    
+                    this.createBlock(placeX, placeY, placeZ, this.selectedBlockType);
+                    
                     const chunkBlocks = this.loadedChunks.get(chunkKey);
                     if (chunkBlocks) {
                         chunkBlocks.add(blockKey);
