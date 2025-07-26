@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(git init:*)",
+      "Bash(gh auth:*)",
+      "Bash(git config:*)",
+      "Bash(gh api:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": []
+  }
+}
